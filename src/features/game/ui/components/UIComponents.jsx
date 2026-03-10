@@ -1,6 +1,5 @@
 import React from 'react';
 
-// ─── Inject Google Font + keyframes ────────────────────────────────────────
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
@@ -34,8 +33,8 @@ const styles = `
   }
 
   @keyframes fadeIn   { from { opacity:0; transform:scale(.96) translateY(6px) } to { opacity:1; transform:scale(1) translateY(0) } }
-  @keyframes slideUp  { from { opacity:0; transform:translateX(-50%) translateY(12px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }
-  @keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(-16px) scale(.9) } to { opacity:1; transform:translateX(-50%) translateY(0) scale(1) } }
+  @keyframes slideUp  { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+  @keyframes toastIn  { from { opacity:0; transform:translateY(-16px) scale(.9) } to { opacity:1; transform:translateY(0) scale(1) } }
   @keyframes barFill  { from { width:0 } to { width:var(--target-width) } }
   @keyframes spin     { to { transform:rotate(360deg) } }
 
@@ -44,7 +43,6 @@ const styles = `
   .animate-toastIn { animation: toastIn .28s cubic-bezier(.16,1,.3,1) both }
   .animate-spin    { animation: spin 1s linear infinite }
 
-  /* ── Demo page resets ── */
   body { margin:0; background:#F5F4F2; }
 `;
 
@@ -60,7 +58,6 @@ function InjectStyles() {
     return null;
 }
 
-// ─── BUTTON ────────────────────────────────────────────────────────────────
 export function Button({
     children,
     onClick,
@@ -155,7 +152,6 @@ export function Button({
     );
 }
 
-// ─── ICON BUTTON ───────────────────────────────────────────────────────────
 export function IconButton({
     children,
     onClick,
@@ -209,7 +205,6 @@ export function IconButton({
     );
 }
 
-// ─── PANEL ─────────────────────────────────────────────────────────────────
 export function Panel({ children, style: styleProp = {}, variant = 'default', noPadding = false }) {
     const variants = {
         default: {
@@ -250,7 +245,6 @@ export function Panel({ children, style: styleProp = {}, variant = 'default', no
     );
 }
 
-// ─── SIDE PANEL ────────────────────────────────────────────────────────────
 export function SidePanel({ isOpen, onClose, side = 'left', title, children }) {
     const translateX = side === 'left'
         ? (isOpen ? 'translateX(0)' : 'translateX(-100%)')
@@ -259,7 +253,6 @@ export function SidePanel({ isOpen, onClose, side = 'left', title, children }) {
     return (
         <>
             <InjectStyles />
-            {/* Backdrop */}
             <div
                 onClick={onClose}
                 style={{
@@ -270,20 +263,15 @@ export function SidePanel({ isOpen, onClose, side = 'left', title, children }) {
                     transition: 'opacity .25s ease',
                 }}
             />
-
-            {/* Drawer */}
             <div style={{
                 position: 'fixed', top: 0, [side]: 0,
-                height: '100%', width: 320,
+                height: '100dvh', width: 'min(320px, 90vw)',
                 background: 'rgba(255,255,255,.98)', backdropFilter: 'blur(20px)',
                 boxShadow: 'var(--shadow-xl)', zIndex: 50,
                 transform: translateX, transition: 'transform .3s cubic-bezier(.16,1,.3,1)',
                 display: 'flex', flexDirection: 'column',
             }}>
-                {/* Accent strip */}
                 <div style={{ height: 3, background: 'var(--grad-warm)', flexShrink: 0 }} />
-
-                {/* Header */}
                 <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0,
@@ -305,9 +293,7 @@ export function SidePanel({ isOpen, onClose, side = 'left', title, children }) {
                         </svg>
                     </button>
                 </div>
-
-                {/* Content */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
                     {children}
                 </div>
             </div>
@@ -315,7 +301,6 @@ export function SidePanel({ isOpen, onClose, side = 'left', title, children }) {
     );
 }
 
-// ─── MODAL ─────────────────────────────────────────────────────────────────
 export function Modal({ isOpen, onClose, title, children, size = 'md', showCloseButton = true }) {
     React.useEffect(() => {
         const handler = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -330,20 +315,23 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
     return (
         <>
             <InjectStyles />
-            <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-                {/* Backdrop */}
+            <div style={{
+                position: 'fixed', inset: 0, zIndex: 50, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                padding: 'max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))',
+                height: '100dvh', width: '100vw', boxSizing: 'border-box'
+            }}>
                 <div
                     onClick={onClose}
                     style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(6px)' }}
                 />
-
-                {/* Dialog */}
                 <div
                     className="animate-fadeIn"
                     style={{
                         position: 'relative', background: '#fff', borderRadius: 'var(--radius-xl)',
                         boxShadow: 'var(--shadow-xl)', width: '100%', maxWidth: maxWidths[size],
-                        padding: '28px 28px 24px', overflow: 'hidden',
+                        maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column',
+                        overflowY: 'auto', padding: '28px 28px 24px', WebkitOverflowScrolling: 'touch'
                     }}
                 >
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'var(--grad-warm)' }} />
@@ -370,19 +358,20 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
                         <h3 style={{
                             margin: '0 0 16px', fontSize: 20, fontWeight: 800, letterSpacing: '-.03em',
                             background: 'var(--grad-warm)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                            paddingRight: 32,
+                            paddingRight: 32, flexShrink: 0
                         }}>
                             {title}
                         </h3>
                     )}
-                    {children}
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                        {children}
+                    </div>
                 </div>
             </div>
         </>
     );
 }
 
-// ─── TOGGLE ────────────────────────────────────────────────────────────────
 export function Toggle({ enabled, onChange, label, icon, description }) {
     return (
         <div
@@ -403,14 +392,12 @@ export function Toggle({ enabled, onChange, label, icon, description }) {
                 </div>
             </div>
 
-            {/* Track */}
             <div style={{
                 width: 44, height: 26, borderRadius: 13,
                 background: enabled ? 'var(--emerald)' : '#D1D5DB',
                 position: 'relative', flexShrink: 0, transition: 'background .2s ease',
                 boxShadow: enabled ? '0 0 0 3px rgba(16,185,129,.15)' : 'none',
             }}>
-                {/* Thumb */}
                 <div style={{
                     position: 'absolute', top: 3, left: enabled ? 21 : 3,
                     width: 20, height: 20, borderRadius: '50%',
@@ -422,7 +409,6 @@ export function Toggle({ enabled, onChange, label, icon, description }) {
     );
 }
 
-// ─── TOAST ─────────────────────────────────────────────────────────────────
 export function Toast({ message, type = 'success', isVisible, onHide }) {
     React.useEffect(() => {
         if (isVisible) {
@@ -444,30 +430,33 @@ export function Toast({ message, type = 'success', isVisible, onHide }) {
     return (
         <>
             <InjectStyles />
-            <div className="animate-toastIn" style={{
-                position: 'fixed', top: 20, left: '50%', zIndex: 9999,
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 18px 10px 12px',
-                background: bg, borderRadius: 'var(--radius-full)',
-                boxShadow: `0 8px 32px ${glow}, var(--shadow-md)`,
-                color: '#fff', fontWeight: 600, fontSize: 13,
-                letterSpacing: '-.01em', whiteSpace: 'nowrap',
+            <div style={{
+                position: 'fixed', top: 20, left: 0, right: 0, zIndex: 9999,
+                display: 'flex', justifyContent: 'center', pointerEvents: 'none'
             }}>
-                <span style={{
-                    width: 22, height: 22, borderRadius: '50%',
-                    background: 'rgba(255,255,255,.25)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 800,
+                <div className="animate-toastIn" style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 18px 10px 12px',
+                    background: bg, borderRadius: 'var(--radius-full)',
+                    boxShadow: `0 8px 32px ${glow}, var(--shadow-md)`,
+                    color: '#fff', fontWeight: 600, fontSize: 13,
+                    letterSpacing: '-.01em', whiteSpace: 'nowrap', pointerEvents: 'auto'
                 }}>
-                    {icon}
-                </span>
-                {message}
+                    <span style={{
+                        width: 22, height: 22, borderRadius: '50%',
+                        background: 'rgba(255,255,255,.25)', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 800,
+                    }}>
+                        {icon}
+                    </span>
+                    {message}
+                </div>
             </div>
         </>
     );
 }
 
-// ─── PROGRESS BAR ──────────────────────────────────────────────────────────
 export function ProgressBar({ value, max, showLabel = false, variant = 'warm', style: styleProp = {} }) {
     const pct = Math.min(100, Math.max(0, Math.round((value / max) * 100)));
 
@@ -504,7 +493,6 @@ export function ProgressBar({ value, max, showLabel = false, variant = 'warm', s
     );
 }
 
-// ─── BADGE ─────────────────────────────────────────────────────────────────
 export function Badge({ children, variant = 'default' }) {
     const variants = {
         default: { background: 'var(--surface)', color: 'var(--muted)', border: '1.5px solid var(--border)' },
@@ -527,7 +515,6 @@ export function Badge({ children, variant = 'default' }) {
     );
 }
 
-// ─── INPUT ─────────────────────────────────────────────────────────────────
 export function Input({ label, placeholder, value, onChange, type = 'text', prefix, suffix, error }) {
     const [focused, setFocused] = React.useState(false);
 
@@ -570,7 +557,6 @@ export function Input({ label, placeholder, value, onChange, type = 'text', pref
     );
 }
 
-// ─── DIVIDER ───────────────────────────────────────────────────────────────
 export function Divider({ label }) {
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
@@ -581,7 +567,6 @@ export function Divider({ label }) {
     );
 }
 
-// ─── DEMO PAGE ─────────────────────────────────────────────────────────────
 export default function Demo() {
     const [sidePanelOpen, setSidePanelOpen] = React.useState(false);
     const [modalOpen, setModalOpen] = React.useState(false);
@@ -611,10 +596,9 @@ export default function Demo() {
     );
 
     return (
-        <div style={{ minHeight: '100vh', background: '#F0EEEb', fontFamily: 'DM Sans, sans-serif' }}>
+        <div style={{ minHeight: '100dvh', background: '#F0EEEb', fontFamily: 'DM Sans, sans-serif' }}>
             <InjectStyles />
 
-            {/* Header */}
             <div style={{
                 background: 'rgba(255,255,255,.8)', backdropFilter: 'blur(16px)',
                 borderBottom: '1px solid var(--border)', padding: '14px 24px',
@@ -639,10 +623,8 @@ export default function Demo() {
                 </div>
             </div>
 
-            {/* Content */}
             <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px 64px' }}>
 
-                {/* Buttons */}
                 {section('Buttons')}
                 <Panel>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
@@ -672,7 +654,6 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Icon Buttons */}
                 {section('Icon Buttons')}
                 <Panel>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -687,7 +668,6 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Badges */}
                 {section('Badges')}
                 <Panel>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -699,16 +679,14 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Panels */}
                 {section('Panels')}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12 }}>
                     <Panel variant="default"><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}><strong style={{ color: 'var(--ink)' }}>Default</strong><br />Glass surface with shadow</p></Panel>
                     <Panel variant="bordered"><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}><strong style={{ color: 'var(--ink)' }}>Bordered</strong><br />Amber accent border</p></Panel>
                     <Panel variant="gradient" style={{ position: 'relative' }}><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', paddingTop: 4 }}><strong style={{ color: 'var(--ink)' }}>Gradient</strong><br />Top accent strip</p></Panel>
                     <Panel variant="flat"><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}><strong style={{ color: 'var(--ink)' }}>Flat</strong><br />Subtle surface</p></Panel>
                 </div>
 
-                {/* Progress */}
                 {section('Progress Bars')}
                 <Panel>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -718,7 +696,6 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Toggles */}
                 {section('Toggles')}
                 <Panel>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -728,7 +705,6 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Inputs */}
                 {section('Inputs')}
                 <Panel>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -738,7 +714,6 @@ export default function Demo() {
                     </div>
                 </Panel>
 
-                {/* Toast triggers */}
                 {section('Toasts')}
                 <Panel>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -752,7 +727,6 @@ export default function Demo() {
 
             </div>
 
-            {/* Side Panel */}
             <SidePanel isOpen={sidePanelOpen} onClose={() => setSidePanelOpen(false)} side="left" title="Navigation">
                 {['Dashboard', 'Analytics', 'Projects', 'Team', 'Settings'].map((item, i) => (
                     <div key={i} style={{
@@ -768,7 +742,6 @@ export default function Demo() {
                 ))}
             </SidePanel>
 
-            {/* Modal */}
             <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Component Library" size="md">
                 <p style={{ margin: '0 0 16px', color: 'var(--muted)', fontSize: 14, lineHeight: 1.6 }}>
                     A refined collection of UI primitives built for production. Every component ships with consistent tokens, smooth transitions, and accessible defaults.
@@ -779,7 +752,6 @@ export default function Demo() {
                 </div>
             </Modal>
 
-            {/* Toast */}
             <Toast message={toast.msg} type={toast.type} isVisible={toast.visible} onHide={() => setToast(t => ({ ...t, visible: false }))} />
         </div>
     );
