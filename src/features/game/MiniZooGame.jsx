@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import { createScene, createCamera, createRenderer, createLighting } from './components/Scene.jsx';
-import { createTerrain, loadTrees, loadBushes, loadRocks, createGrass, createClouds } from './components/Terrain.jsx';
+import { createTerrain, loadTrees, loadBushes, loadRocks, createGrass, createClouds, getTerrainHeight } from './components/Terrain.jsx';
 import { loadGLTFAnimals } from './components/Animals.jsx';
 import {
     createMovementHandler,
@@ -16,15 +18,13 @@ import {
     GameHUD,
     SettingsPanel,
     TaskPanel,
-    InteractionPrompt,
-    MobileInteractionButtons,
     AnimalInfoModal,
     FeedingSuccessNotification,
     QuitModal,
     Joystick,
     JumpButton,
-    CameraSystem,
     BottomHotbar,
+    WelcomePopup,
     BULUSAN_ZOO_URL
 } from './ui/GameUI.jsx';
 
@@ -36,13 +36,106 @@ import {
     getTotalTasks
 } from './utils/storage.js';
 
+const PLAYER_HEIGHT = 4.5;
+const STATUE_CENTER = { x: 0, z: 0 };
+const PLAYER_START_OFFSET = { x: 14, z: 10 };
+const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
+
+function isMusicEnabled() {
+    try {
+        const raw = localStorage.getItem('minizoo_settings');
+        if (!raw) return true;
+        const parsed = JSON.parse(raw);
+        return parsed?.musicEnabled !== false;
+    } catch {
+        return true;
+    }
+}
+
+function addStatueLights(scene) {
+    const key = new THREE.SpotLight(0xfff3d9, 1.2, 140, Math.PI / 5, 0.35, 1.2);
+    key.position.set(24, 30, 18);
+    key.target.position.set(STATUE_CENTER.x, 6, STATUE_CENTER.z);
+    key.castShadow = false;
+
+    const fill = new THREE.PointLight(0xd6e9ff, 0.5, 120, 2);
+    fill.position.set(-18, 16, -12);
+
+    scene.add(key);
+    scene.add(key.target);
+    scene.add(fill);
+}
+
+function loadCenterStatue(scene, isMobile) {
+    const loader = new GLTFLoader();
+    return new Promise((resolve) => {
+        loader.load(
+            '/bulusanstatue.glb',
+            (gltf) => {
+                const statue = gltf.scene;
+                const terrainY = getTerrainHeight(STATUE_CENTER.x, STATUE_CENTER.z);
+                statue.position.set(STATUE_CENTER.x, terrainY, STATUE_CENTER.z);
+
+                statue.traverse((child) => {
+                    if (!child.isMesh) return;
+                    child.castShadow = false;
+                    child.receiveShadow = false;
+
+                    const toBasic = (mat) => {
+                        if (!mat) return mat;
+                        const basic = new THREE.MeshBasicMaterial();
+                        if (mat.map) {
+                            mat.map.colorSpace = THREE.SRGBColorSpace;
+                            mat.map.needsUpdate = true;
+                            basic.map = mat.map;
+                        }
+                        basic.side = mat.side;
+                        basic.transparent = mat.transparent;
+                        basic.alphaTest = mat.alphaTest;
+                        mat.dispose();
+                        return basic;
+                    };
+
+                    if (Array.isArray(child.material)) {
+                        child.material = child.material.map(toBasic);
+                    } else {
+                        child.material = toBasic(child.material);
+                    }
+                });
+
+                const initialBox = new THREE.Box3().setFromObject(statue);
+                const initialSize = new THREE.Vector3();
+                initialBox.getSize(initialSize);
+
+                const targetHeight = isMobile ? 8 : 10;
+                const currentHeight = Math.max(initialSize.y, 0.001);
+                const scale = targetHeight / currentHeight;
+                statue.scale.setScalar(scale);
+
+                const fittedBox = new THREE.Box3().setFromObject(statue);
+                statue.position.y += terrainY - fittedBox.min.y;
+
+                scene.add(statue);
+
+                const fittedSize = new THREE.Vector3();
+                fittedBox.getSize(fittedSize);
+                const collisionRadius = Math.max(3.5, Math.max(fittedSize.x, fittedSize.z) * 0.42);
+                resolve({ statue, collisionRadius });
+            },
+            undefined,
+            () => resolve(null)
+        );
+    });
+}
+
 function MiniZooGame() {
     const containerRef = useRef(null);
     const stickRef = useRef(null);
     const baseRef = useRef(null);
     const jumpRef = useRef(null);
 
-    const cameraRef = useRef({ capture: null, openGallery: null });
+    const welcomeTimerRef = useRef(null);
+    const ambienceRef = useRef(null);
 
     const [isTouchDevice, setIsTouchDevice] = useState(() => {
         if (typeof window === 'undefined') return false;
@@ -59,23 +152,22 @@ function MiniZooGame() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [tasksOpen, setTasksOpen] = useState(false);
     const [showQuitModal, setShowQuitModal] = useState(false);
+    const [showWelcome, setShowWelcome] = useState(false);
 
     const [nearbyAnimal, setNearbyAnimal] = useState(null);
     const [selectedAnimal, setSelectedAnimal] = useState(null);
+    const [animalModalPlacement, setAnimalModalPlacement] = useState('bottom');
+    const [isCompactAnimalPopupDismissed, setIsCompactAnimalPopupDismissed] = useState(false);
     const [tasks, setTasks] = useState(getTasks());
 
     const [feedingSuccess, setFeedingSuccess] = useState({ visible: false, animalName: '' });
-
-    const [photoCount, setPhotoCount] = useState(() => {
-        try { const s = localStorage.getItem('minizoo_photos'); return s ? JSON.parse(s).length : 0; }
-        catch { return 0; }
-    });
 
     // Added obstacles array to state to hold tree/rock/bush positions
     const gameStateRef = useRef({
         keys: {}, yaw: 0, pitch: 0,
         mX: 0, mY: 0, sActive: false, lActive: false, lx: 0, ly: 0,
         velocityY: 0, isJumping: false, isGrounded: true,
+        cameraControlLockedUntil: 0,
         animationId: null, scene: null, camera: null, renderer: null,
         animals: [], clouds: [], obstacles: [], cleanup: null, initialized: false
     });
@@ -109,6 +201,38 @@ function MiniZooGame() {
         return null;
     }, []);
 
+    const getAmbience = useCallback(() => {
+        if (!ambienceRef.current) {
+            const audio = new Audio('/ambience.mp3');
+            audio.loop = true;
+            audio.preload = 'auto';
+            audio.volume = 0.42;
+            audio.setAttribute('playsinline', 'true');
+            ambienceRef.current = audio;
+        }
+        return ambienceRef.current;
+    }, []);
+
+    const playAmbience = useCallback(async () => {
+        if (!isMusicEnabled()) return;
+        const audio = getAmbience();
+        if (!audio.paused) return;
+        try {
+            await audio.play();
+        } catch {
+            // Playback can fail before a user interaction; we'll retry on next allowed interaction.
+        }
+    }, [getAmbience]);
+
+    const stopAmbience = useCallback((keepPosition = true) => {
+        const audio = ambienceRef.current;
+        if (!audio) return;
+        audio.pause();
+        if (!keepPosition) {
+            audio.currentTime = 0;
+        }
+    }, []);
+
     const initGame = useCallback(async () => {
         const state = gameStateRef.current;
         if (state.initialized) return;
@@ -122,7 +246,10 @@ function MiniZooGame() {
 
             createLighting(scene);
             createTerrain(scene);
+            addStatueLights(scene);
             setLoadProgress(15);
+
+            const statuePromise = loadCenterStatue(scene, isMobile);
 
             const { loadPromise: treesP } = loadTrees(scene, isMobile ? 50 : 80);
             const { loadPromise: bushesP } = loadBushes(scene, isMobile ? 40 : 70);
@@ -130,22 +257,37 @@ function MiniZooGame() {
 
             setLoadProgress(30);
             // Wait for all objects to load, and extract the resulting arrays!
-            const [loadedTrees, loadedBushes, loadedRocks] = await Promise.all([treesP, bushesP, rocksP]);
+            const [loadedTrees, loadedBushes, loadedRocks, statueResult] = await Promise.all([treesP, bushesP, rocksP, statuePromise]);
 
             // Create collision obstacles based on the loaded meshes
             state.obstacles = [];
             loadedTrees.forEach(t => state.obstacles.push({ x: t.position.x, z: t.position.z, radius: t.scale.x * 0.8 }));
             loadedRocks.forEach(r => state.obstacles.push({ x: r.position.x, z: r.position.z, radius: r.scale.x * 1.1 }));
             loadedBushes.forEach(b => state.obstacles.push({ x: b.position.x, z: b.position.z, radius: b.scale.x * 0.6 }));
+            if (statueResult) {
+                state.obstacles.push({
+                    x: STATUE_CENTER.x,
+                    z: STATUE_CENTER.z,
+                    radius: statueResult.collisionRadius
+                });
+            }
 
-            createGrass(scene, isMobile ? 600 : 2500);
+            const spawnX = STATUE_CENTER.x + PLAYER_START_OFFSET.x;
+            const spawnZ = STATUE_CENTER.z + PLAYER_START_OFFSET.z;
+            camera.position.set(spawnX, getTerrainHeight(spawnX, spawnZ) + PLAYER_HEIGHT, spawnZ);
+            const yawToCenter = Math.atan2(-(STATUE_CENTER.x - spawnX), -(STATUE_CENTER.z - spawnZ));
+            state.yaw = yawToCenter;
+            state.pitch = 0;
+            camera.rotation.set(0, yawToCenter, 0, 'YXZ');
+
+            createGrass(scene, isMobile ? 260 : 900);
             setLoadProgress(55);
 
             // Pass the obstacles to the animals so they don't walk through them either!
             state.animals = await loadGLTFAnimals(scene, state.obstacles);
             setLoadProgress(80);
 
-            state.clouds = createClouds(scene, isMobile ? 12 : 18);
+            state.clouds = createClouds(scene, isMobile ? 8 : 12);
             setLoadProgress(95);
 
             const handleMovement = createMovementHandler(camera, state);
@@ -159,6 +301,11 @@ function MiniZooGame() {
                 const now = performance.now();
                 const dt = Math.min((now - lastTime) * 0.001, 0.1);
                 lastTime = now;
+
+                // Reduce CPU usage while hidden.
+                if (document.hidden) {
+                    return;
+                }
 
                 handleMovement();
 
@@ -221,54 +368,35 @@ function MiniZooGame() {
         }
     }, [checkNearbyAnimals]);
 
-    useEffect(() => {
-        const onKey = e => {
-            const key = e.key.toLowerCase();
-            if (key === 'e' && nearbyAnimal && !selectedAnimal && gameStarted) {
-                setSelectedAnimal(nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config);
-            }
-            if (key === 'f' && nearbyAnimal && !selectedAnimal && gameStarted) {
-                handleFeedAnimal();
-            }
-            if (key === 'escape') {
-                if (selectedAnimal) setSelectedAnimal(null);
-                else if (settingsOpen) setSettingsOpen(false);
-                else if (tasksOpen) setTasksOpen(false);
-            }
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [nearbyAnimal, selectedAnimal, gameStarted, settingsOpen, tasksOpen]);
-
-    useEffect(() => {
-        let mounted = true;
-        const t = setTimeout(() => { if (mounted && containerRef.current) initGame(); }, 100);
-        return () => {
-            mounted = false;
-            clearTimeout(t);
-            gameStateRef.current.cleanup?.();
-        };
-    }, [initGame]);
-
-    useEffect(() => {
-        if (!gameStarted) return;
-        const sync = () => {
-            try { const s = localStorage.getItem('minizoo_photos'); setPhotoCount(s ? JSON.parse(s).length : 0); }
-            catch { }
-        };
-        const id = setInterval(sync, 800);
-        return () => clearInterval(id);
-    }, [gameStarted]);
-
-    const handleStartGame = useCallback(() => { setShowMenu(false); setGameStarted(true); }, []);
+    const handleStartGame = useCallback(() => {
+        setShowMenu(false);
+        setGameStarted(true);
+        setShowWelcome(true);
+        playAmbience();
+        if (welcomeTimerRef.current) {
+            clearTimeout(welcomeTimerRef.current);
+        }
+        welcomeTimerRef.current = setTimeout(() => {
+            setShowWelcome(false);
+            welcomeTimerRef.current = null;
+        }, 3000);
+    }, [playAmbience]);
     const handleMenuClick = useCallback(() => setSettingsOpen(true), []);
     const handleTasksClick = useCallback(() => setTasksOpen(true), []);
     const handleQuitRequest = useCallback(() => { setSettingsOpen(false); setShowQuitModal(true); }, []);
-    const handleConfirmQuit = useCallback(() => { setShowQuitModal(false); window.location.href = BULUSAN_ZOO_URL; }, []);
+    const handleConfirmQuit = useCallback(() => {
+        setShowQuitModal(false);
+        stopAmbience(false);
+        window.location.href = BULUSAN_ZOO_URL;
+    }, [stopAmbience]);
     const handleCancelQuit = useCallback(() => setShowQuitModal(false), []);
 
     const handleViewDetails = useCallback(() => {
-        if (nearbyAnimal) setSelectedAnimal(nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config);
+        if (!nearbyAnimal) return;
+        const info = nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config;
+        setSelectedAnimal(info);
+        setIsCompactAnimalPopupDismissed(false);
+        setAnimalModalPlacement('center');
     }, [nearbyAnimal]);
 
     const handleFeedAnimal = useCallback(() => {
@@ -277,33 +405,151 @@ function MiniZooGame() {
         feedAnimal(info.name);
         setTasks(getTasks());
         setFeedingSuccess({ visible: true, animalName: info.name });
-        if (selectedAnimal) setSelectedAnimal(null);
-    }, [nearbyAnimal, selectedAnimal]);
+    }, [nearbyAnimal]);
 
     const handleFeedFromModal = useCallback(() => {
         if (!selectedAnimal) return;
         feedAnimal(selectedAnimal.name);
         setTasks(getTasks());
         setFeedingSuccess({ visible: true, animalName: selectedAnimal.name });
-        setSelectedAnimal(null);
-    }, [selectedAnimal]);
+        if (animalModalPlacement === 'center') {
+            setAnimalModalPlacement('bottom');
+            setSelectedAnimal(null);
+            setIsCompactAnimalPopupDismissed(false);
+        }
+    }, [selectedAnimal, animalModalPlacement]);
 
     const handleHideFeedSuccess = useCallback(() => setFeedingSuccess({ visible: false, animalName: '' }), []);
-    const handleCloseAnimalModal = useCallback(() => setSelectedAnimal(null), []);
+    const handleCloseAnimalModal = useCallback(() => {
+        if (animalModalPlacement === 'center') {
+            setAnimalModalPlacement('bottom');
+            setSelectedAnimal(null);
+            return;
+        }
+        setIsCompactAnimalPopupDismissed(true);
+        setSelectedAnimal(null);
+    }, [animalModalPlacement]);
+
+    useEffect(() => {
+        const info = nearbyAnimal ? (nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config) : null;
+        if (!info) {
+            setIsCompactAnimalPopupDismissed(false);
+            setSelectedAnimal(null);
+            return;
+        }
+        if (animalModalPlacement !== 'center') {
+            setIsCompactAnimalPopupDismissed(false);
+        }
+    }, [nearbyAnimal, animalModalPlacement]);
+
+    useEffect(() => {
+        const onKey = e => {
+            const key = e.key.toLowerCase();
+            if (key === 'e' && nearbyAnimal && gameStarted) {
+                const info = nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config;
+                setSelectedAnimal(info);
+                setAnimalModalPlacement('center');
+                setIsCompactAnimalPopupDismissed(false);
+            }
+            if (key === 'f' && nearbyAnimal && !selectedAnimal && gameStarted) {
+                const info = nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config;
+                feedAnimal(info.name);
+                setTasks(getTasks());
+                setFeedingSuccess({ visible: true, animalName: info.name });
+            }
+            if (key === 'escape') {
+                if (animalModalPlacement === 'center' && selectedAnimal) {
+                    setAnimalModalPlacement('bottom');
+                    setSelectedAnimal(null);
+                }
+                else if (nearbyAnimal) {
+                    setIsCompactAnimalPopupDismissed(true);
+                    setSelectedAnimal(null);
+                }
+                else if (settingsOpen) setSettingsOpen(false);
+                else if (tasksOpen) setTasksOpen(false);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [nearbyAnimal, selectedAnimal, gameStarted, settingsOpen, tasksOpen, animalModalPlacement]);
+
+    useEffect(() => {
+        let mounted = true;
+        const state = gameStateRef.current;
+        const t = setTimeout(() => { if (mounted && containerRef.current) initGame(); }, 100);
+        return () => {
+            mounted = false;
+            clearTimeout(t);
+            if (welcomeTimerRef.current) {
+                clearTimeout(welcomeTimerRef.current);
+                welcomeTimerRef.current = null;
+            }
+            stopAmbience(false);
+            ambienceRef.current = null;
+            state.cleanup?.();
+        };
+    }, [initGame, stopAmbience]);
+
+    useEffect(() => {
+        if (!gameStarted) return;
+
+        const applyMusicState = () => {
+            if (document.hidden) {
+                stopAmbience(true);
+                return;
+            }
+            if (isMusicEnabled()) {
+                playAmbience();
+            } else {
+                stopAmbience(true);
+            }
+        };
+
+        applyMusicState();
+
+        const onSettingsChanged = () => {
+            applyMusicState();
+        };
+
+        const onStorage = (e) => {
+            if (!e || e.key === 'minizoo_settings' || e.key === null) {
+                applyMusicState();
+            }
+        };
+
+        const onVisibilityChange = () => {
+            applyMusicState();
+        };
+
+        window.addEventListener('storage', onStorage);
+        window.addEventListener(SETTINGS_CHANGE_EVENT, onSettingsChanged);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
+        return () => {
+            window.removeEventListener('storage', onStorage);
+            window.removeEventListener(SETTINGS_CHANGE_EVENT, onSettingsChanged);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            stopAmbience(true);
+        };
+    }, [gameStarted, playAmbience, stopAmbience]);
 
     const nearbyAnimalInfo = nearbyAnimal ? (nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config) : null;
-    const isSelectedFed = selectedAnimal ? isAnimalFed(selectedAnimal.name) : false;
+    const compactAnimal = (!isCompactAnimalPopupDismissed && animalModalPlacement === 'bottom') ? nearbyAnimalInfo : null;
+    const modalAnimal = animalModalPlacement === 'center' ? selectedAnimal : compactAnimal;
+    const isModalAnimalFed = modalAnimal ? isAnimalFed(modalAnimal.name) : false;
     const completedCount = getCompletedTasksCount();
     const totalCount = getTotalTasks();
 
     return (
         <div className="relative w-full h-screen overflow-hidden"
-            style={{ touchAction: 'none', background: 'linear-gradient(to bottom, #7dd3fc, #bae6fd)' }}>
+            style={{ touchAction: 'manipulation', background: 'linear-gradient(to bottom, #7dd3fc, #bae6fd)' }}>
             <div ref={containerRef} className="absolute inset-0" />
             {isLoading && <LoadingScreen progress={loadProgress} />}
             {!isLoading && showMenu && <MainMenu onStart={handleStartGame} isVisible={showMenu} />}
             {gameStarted && (
                 <>
+                    <WelcomePopup visible={showWelcome} message="welcome to zoo, enjoy" />
                     <GameHUD
                         onMenuClick={handleMenuClick}
                         onTasksClick={handleTasksClick}
@@ -312,37 +558,23 @@ function MiniZooGame() {
                     />
                     <Joystick baseRef={baseRef} stickRef={stickRef} />
                     <JumpButton jumpRef={jumpRef} />
-                    <InteractionPrompt
-                        visible={!!nearbyAnimal && !selectedAnimal}
-                        onFeed={handleFeedAnimal}
-                        onViewDetails={handleViewDetails}
-                        animalName={nearbyAnimalInfo?.name || 'Animal'}
-                        isTouchDevice={isTouchDevice}
-                    />
-                    {isTouchDevice && (
-                        <MobileInteractionButtons
-                            visible={!!nearbyAnimal && !selectedAnimal}
-                            onFeed={handleFeedAnimal}
-                            onViewDetails={handleViewDetails}
-                        />
-                    )}
-                    <CameraSystem
-                        gameStarted={gameStarted}
-                        containerRef={containerRef}
-                        nearbyAnimalName={nearbyAnimalInfo?.name || null}
-                        onRegister={handlers => { cameraRef.current = handlers; }}
-                    />
                     <BottomHotbar
                         gameStarted={gameStarted}
                         completedTasks={completedCount}
                         totalTasks={totalCount}
-                        photos={photoCount}
-                        onCameraClick={() => cameraRef.current?.capture?.()}
-                        onGalleryClick={() => cameraRef.current?.openGallery?.()}
                     />
                     <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} onQuit={handleQuitRequest} />
                     <TaskPanel isOpen={tasksOpen} onClose={() => setTasksOpen(false)} tasks={tasks} onTaskClick={() => setTasksOpen(false)} />
-                    <AnimalInfoModal animal={selectedAnimal} onClose={handleCloseAnimalModal} onFeed={handleFeedFromModal} isFed={isSelectedFed} />
+                    <AnimalInfoModal
+                        animal={modalAnimal}
+                        onClose={handleCloseAnimalModal}
+                        onFeed={animalModalPlacement === 'center' ? handleFeedFromModal : handleFeedAnimal}
+                        isFed={isModalAnimalFed}
+                        placement={animalModalPlacement}
+                        preview={animalModalPlacement === 'bottom'}
+                        onView={handleViewDetails}
+                        bottomOffset={isTouchDevice ? 'max(132px, env(safe-area-inset-bottom) + 96px)' : 'max(84px, env(safe-area-inset-bottom) + 48px)'}
+                    />
                     <FeedingSuccessNotification visible={feedingSuccess.visible} animalName={feedingSuccess.animalName} onHide={handleHideFeedSuccess} />
                 </>
             )}

@@ -135,6 +135,7 @@ export function Button({
             <InjectStyles />
             <button
                 ref={hoverRef}
+                className={className}
                 onClick={!disabled && !loading ? onClick : undefined}
                 onMouseEnter={handleEnter}
                 onMouseLeave={handleLeave}

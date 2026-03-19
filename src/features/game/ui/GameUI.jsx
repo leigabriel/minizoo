@@ -1,9 +1,30 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'http://localhost:5173';
+const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'https://bulusanzoo.vercel.app';
 const HUD_EDGE = 14;
 const KF = "'Nunito', 'Fredoka One', system-ui, sans-serif";
 const KF_DISPLAY = "'Fredoka One', 'Nunito', system-ui, sans-serif";
+const SETTINGS_KEY = 'minizoo_settings';
+const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
+
+function readSettings() {
+    try {
+        const s = localStorage.getItem(SETTINGS_KEY);
+        return s ? JSON.parse(s) : { musicEnabled: true, soundEnabled: true };
+    } catch {
+        return { musicEnabled: true, soundEnabled: true };
+    }
+}
+
+function persistSettings(updated) {
+    try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+        window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 function getDeviceType() {
     if (typeof window === 'undefined') return 'desktop';
@@ -33,6 +54,28 @@ function useDeviceType() {
 function useIsTouch() {
     const d = useDeviceType();
     return d === 'mobile' || d === 'tablet';
+}
+
+function useViewportInfo() {
+    const [viewport, setViewport] = useState(() => ({
+        w: typeof window === 'undefined' ? 1280 : window.innerWidth,
+        h: typeof window === 'undefined' ? 720 : window.innerHeight,
+    }));
+
+    useEffect(() => {
+        const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.removeEventListener('orientationchange', onResize);
+        };
+    }, []);
+
+    const isLandscape = viewport.w > viewport.h;
+    const isShort = viewport.h < 560;
+
+    return { ...viewport, isLandscape, isShort };
 }
 
 function useFullscreen() {
@@ -275,202 +318,13 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
     );
 }
 
-function CloudBg() {
-    return (
-        <svg viewBox="0 0 1440 320" preserveAspectRatio="none"
-            style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '45%', opacity: .18, pointerEvents: 'none' }}
-            fill="white">
-            <path d="M0,160L48,144C96,128,192,96,288,90.7C384,85,480,107,576,138.7C672,171,768,213,864,202.7C960,192,1056,128,1152,112C1248,96,1344,128,1392,144L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z" />
-        </svg>
-    );
-}
-
-function LoadingTree({ left, size = 1, color = '#3aad5a', swayClass = 'ls-sway-a', delay = 0 }) {
-    const h = Math.round(70 * size);
-    const w = Math.round(52 * size);
-    const th = Math.round(16 * size);
-    const tw = Math.round(10 * size);
-    return (
-        <div className={`ls-tree ${swayClass}`} style={{ left, animationDelay: `${delay}s` }}>
-            <div className="ls-tree-canopy" style={{ width: w, height: h, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 100%)` }} />
-            <div className="ls-tree-trunk" style={{ width: tw, height: th }} />
-        </div>
-    );
-}
-
-function SunRays({ count = 8 }) {
-    return (
-        <div className="ls-sun-rays">
-            {Array.from({ length: count }).map((_, i) => (
-                <div key={i} className="ls-sun-ray" style={{ transform: `rotate(${(360 / count) * i}deg) translateX(-50%)` }} />
-            ))}
-        </div>
-    );
-}
-
-function Sparkles({ count = 6 }) {
-    const items = [
-        { x: -44, y: -18, c: '#ff6b9d', s: 12, d: 0 },
-        { x: 52, y: -24, c: '#ffd32a', s: 10, d: .4 },
-        { x: -28, y: 30, c: '#4ecdc4', s: 8, d: .8 },
-        { x: 40, y: 28, c: '#ff9f43', s: 11, d: 1.2 },
-        { x: -60, y: 4, c: '#a29bfe', s: 9, d: 1.6 },
-        { x: 66, y: 2, c: '#55efc4', s: 8, d: 2.0 },
-    ].slice(0, count);
-    return (
-        <>
-            {items.map((it, i) => (
-                <div key={i} style={{
-                    position: 'absolute',
-                    left: `calc(50% + ${it.x}px)`, top: `calc(50% + ${it.y}px)`,
-                    color: it.c, width: it.s, height: it.s,
-                    animation: 'kids-sparkle 2s ease-in-out infinite',
-                    animationDelay: `${it.d}s`, pointerEvents: 'none',
-                }}>
-                    <Icons.Sparkle />
-                </div>
-            ))}
-        </>
-    );
-}
-
 export function LoadingScreen({ progress }) {
-    const [wiggle, setWiggle] = useState(false);
-    const phase =
-        progress < 20 ? 'Planting trees...' :
-            progress < 45 ? 'Growing the forest...' :
-                progress < 65 ? 'Waking the animals...' :
-                    progress < 85 ? 'Painting the sky...' : 'Almost ready!';
-
-    useEffect(() => {
-        setWiggle(true);
-        const t = setTimeout(() => setWiggle(false), 1200);
-        return () => clearTimeout(t);
-    }, [phase]);
-
-    const grassBlades = Array.from({ length: 28 }, (_, i) => ({
-        left: `${(i / 28) * 100 + (Math.random() * 2 - 1)}%`,
-        height: 14 + Math.round(Math.random() * 14),
-        delay: (i * 0.12).toFixed(2),
-        dir: i % 2 === 0 ? 1 : -1,
-    }));
-
-    const trees = [
-        { left: '2vw', size: .9, color: '#2d9148', sway: 'ls-sway-b', delay: 0 },
-        { left: '9vw', size: 1.1, color: '#3aad5a', sway: 'ls-sway-a', delay: -.5 },
-        { left: '16vw', size: .8, color: '#52c278', sway: 'ls-sway-c', delay: -.3 },
-        { left: '23vw', size: 1.2, color: '#2d9148', sway: 'ls-sway-d', delay: -.7 },
-        { left: '31vw', size: .95, color: '#3aad5a', sway: 'ls-sway-a', delay: -.2 },
-        { left: '39vw', size: 1.0, color: '#52c278', sway: 'ls-sway-e', delay: -.9 },
-        { left: '47vw', size: 1.15, color: '#2d9148', sway: 'ls-sway-b', delay: -.15 },
-        { left: '55vw', size: .85, color: '#3aad5a', sway: 'ls-sway-c', delay: -.6 },
-        { left: '63vw', size: 1.05, color: '#52c278', sway: 'ls-sway-d', delay: -.4 },
-        { left: '70vw', size: .9, color: '#2d9148', sway: 'ls-sway-a', delay: -.8 },
-        { left: '78vw', size: 1.1, color: '#3aad5a', sway: 'ls-sway-e', delay: -.25 },
-        { left: '86vw', size: .8, color: '#52c278', sway: 'ls-sway-b', delay: -.55 },
-        { left: '93vw', size: 1.0, color: '#2d9148', sway: 'ls-sway-c', delay: -.1 },
-    ];
-
     return (
-        <div className="absolute inset-0 z-50 overflow-hidden ls-bg">
-            <div className="ls-sun"><SunRays count={10} /></div>
-            <div className="ls-cloud ls-cloud--1"><div className="ls-cloud-shape" /></div>
-            <div className="ls-cloud ls-cloud--2"><div className="ls-cloud-shape" /></div>
-            <div className="ls-cloud ls-cloud--3"><div className="ls-cloud-shape" /></div>
-            <div className="ls-butterfly ls-butterfly--1">
-                <div className="ls-wing ls-wing--l" style={{ background: '#ff9ff3' }} />
-                <div className="ls-wing ls-wing--r" style={{ background: '#ff9ff3' }} />
-            </div>
-            <div className="ls-butterfly ls-butterfly--2">
-                <div className="ls-wing ls-wing--l" style={{ background: '#74b9ff' }} />
-                <div className="ls-wing ls-wing--r" style={{ background: '#74b9ff' }} />
-            </div>
-            <div className="ls-hill ls-hill--back" />
-            <div className="ls-hill ls-hill--mid" />
-            <div className="ls-grass-strip">
-                {grassBlades.map((b, i) => (
-                    <div key={i} className="ls-grass-blade" style={{
-                        left: b.left, height: b.height,
-                        animation: `ls-grass-sway ${1.6 + parseFloat(b.delay) * .4}s ease-in-out ${b.delay}s infinite alternate`,
-                        transformOrigin: b.dir > 0 ? 'bottom left' : 'bottom right',
-                    }} />
-                ))}
-            </div>
-            <div className="ls-trees">
-                {trees.map((t, i) => (
-                    <LoadingTree key={i} left={t.left} size={t.size} color={t.color} swayClass={t.sway} delay={t.delay} />
-                ))}
-            </div>
-            <div className="ls-hill ls-hill--front" />
-
-            <div className="ls-ui" style={{
-                position: 'absolute', inset: 0,
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                paddingBottom: '22vh',
-            }}>
-                <div style={{ position: 'relative', marginBottom: 14 }}>
-                    <div className={wiggle ? 'kids-wiggle' : 'kids-bounce'} style={{
-                        width: 80, height: 80, background: 'rgba(255,255,255,.95)', borderRadius: 28,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 8px 32px rgba(0,0,0,.14)',
-                        border: '3px solid rgba(255,255,255,.9)',
-                    }}>
-                        <svg width="48" height="48" viewBox="0 0 64 64" fill="none">
-                            <defs>
-                                <radialGradient id="face-grad" cx="50%" cy="40%" r="60%">
-                                    <stop offset="0%" stopColor="#7de09a" /><stop offset="100%" stopColor="#3aad5a" />
-                                </radialGradient>
-                            </defs>
-                            <ellipse cx="18" cy="16" rx="8" ry="11" fill="#5ec97c" />
-                            <ellipse cx="46" cy="16" rx="8" ry="11" fill="#5ec97c" />
-                            <ellipse cx="18" cy="15" rx="4" ry="6" fill="#2d9148" />
-                            <ellipse cx="46" cy="15" rx="4" ry="6" fill="#2d9148" />
-                            <ellipse cx="32" cy="38" rx="22" ry="18" fill="url(#face-grad)" />
-                            <circle cx="24" cy="34" r="4.5" fill="#fff" /><circle cx="40" cy="34" r="4.5" fill="#fff" />
-                            <circle cx="25" cy="35" r="2.5" fill="#1a1a2e" /><circle cx="41" cy="35" r="2.5" fill="#1a1a2e" />
-                            <circle cx="26" cy="34" r="1" fill="#fff" /><circle cx="42" cy="34" r="1" fill="#fff" />
-                            <path d="M27 41 Q32 46 37 41" stroke="#1a5c2e" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-                            <circle cx="24" cy="44" r="4" fill="#ff9ff3" opacity=".45" />
-                            <circle cx="40" cy="44" r="4" fill="#ff9ff3" opacity=".45" />
-                        </svg>
-                    </div>
-                    <Sparkles count={6} />
-                </div>
-
-                <h1 style={{
-                    fontFamily: KF_DISPLAY, fontSize: 'clamp(26px, 6vw, 44px)', fontWeight: 400,
-                    color: '#fff', textShadow: '0 3px 0 rgba(0,0,0,.15)', marginBottom: 6,
-                    textAlign: 'center', letterSpacing: '.02em', lineHeight: 1.1,
-                }}>
-                    Mini Zoo Explorer
-                </h1>
-                <p style={{
-                    fontFamily: KF, fontSize: 'clamp(12px, 2.5vw, 15px)', fontWeight: 700,
-                    color: 'rgba(255,255,255,.85)', marginBottom: 22, textAlign: 'center',
-                    textShadow: '0 1px 4px rgba(0,0,0,.2)',
-                }}>
-                    {phase}
-                </p>
-
-                <div style={{ width: 'min(280px, 74vw)', position: 'relative' }}>
-                    <div className="ls-bar-track" style={{ height: 16 }}>
-                        <div className="ls-bar-fill" style={{ width: `${Math.max(4, progress)}%` }}>
-                            <div className="ls-walker">
-                                <svg width="24" height="24" viewBox="0 0 64 64" fill="none">
-                                    <ellipse cx="32" cy="38" rx="16" ry="12" fill="#ff9f43" />
-                                    <circle cx="32" cy="24" r="10" fill="#ff9f43" />
-                                    <circle cx="27" cy="22" r="3" fill="#fff" /><circle cx="37" cy="22" r="3" fill="#fff" />
-                                    <circle cx="28" cy="23" r="1.5" fill="#1a1a2e" /><circle cx="38" cy="23" r="1.5" fill="#1a1a2e" />
-                                    <path d="M28 29 Q32 33 36 29" stroke="#c0392b" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <p style={{ marginTop: 10, fontFamily: KF, fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,.8)', letterSpacing: '.04em', textShadow: '0 1px 4px rgba(0,0,0,.2)' }}>
-                    {Math.round(progress)}%
-                </p>
+        <div className="absolute inset-0 z-50 ls-minimal-loader">
+            <div className="ls-minimal-loader__center">
+                <span className="ls-minimal-loader__spinner" />
+                <p className="ls-minimal-loader__label">Loading world</p>
+                <p className="ls-minimal-loader__progress">{Math.round(progress)}%</p>
             </div>
         </div>
     );
@@ -514,19 +368,14 @@ export function MainMenu({ onStart, isVisible }) {
     const isMobile = device !== 'desktop';
     const { isFullscreen, toggleFullscreen } = useFullscreen();
 
-    const [settings, setSettings] = useState(() => {
-        try {
-            const s = localStorage.getItem('minizoo_settings');
-            return s ? JSON.parse(s) : { musicEnabled: true, soundEnabled: true };
-        } catch { return { musicEnabled: true, soundEnabled: true }; }
-    });
+    const [settings, setSettings] = useState(() => readSettings());
     const [transitioning, setTransitioning] = useState(false);
-    const [logoWiggle, setLogoWiggle] = useState(false);
+    const [menuSettingsOpen, setMenuSettingsOpen] = useState(false);
 
     const save = useCallback((updates) => {
         const updated = { ...settings, ...updates };
         setSettings(updated);
-        try { localStorage.setItem('minizoo_settings', JSON.stringify(updated)); } catch { }
+        persistSettings(updated);
     }, [settings]);
 
     const handlePlay = useCallback(() => {
@@ -537,141 +386,105 @@ export function MainMenu({ onStart, isVisible }) {
     if (!isVisible) return null;
 
     return (
-        <div className="absolute inset-0 z-40 overflow-hidden"
-            style={{ background: 'linear-gradient(160deg, #87CEEB 0%, #56CCF2 30%, #43e97b 70%, #38f9d7 100%)' }}>
+        <div className="absolute inset-0 z-40 overflow-hidden bg-linear-to-b from-emerald-400 via-green-400 to-emerald-300">
+            <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                    backgroundImage: 'radial-gradient(rgba(255,255,255,.18) 1px, transparent 1px)',
+                    backgroundSize: '3px 3px',
+                    opacity: 0.45,
+                }}
+            />
 
-            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-                {[
-                    { w: 260, h: 260, top: '-8%', left: '-6%', c: 'rgba(255,255,255,.12)', dur: 14 },
-                    { w: 180, h: 180, top: '10%', right: '-4%', c: 'rgba(255,200,100,.14)', dur: 18 },
-                    { w: 220, h: 220, bottom: '5%', left: '8%', c: 'rgba(100,255,180,.12)', dur: 16 },
-                    { w: 140, h: 140, bottom: '12%', right: '6%', c: 'rgba(255,100,180,.1)', dur: 20 },
-                ].map((b, i) => (
-                    <div key={i} style={{
-                        position: 'absolute', width: b.w, height: b.h, borderRadius: '50%',
-                        background: b.c, top: b.top, left: b.left, right: b.right, bottom: b.bottom,
-                        animation: `kids-float ${b.dur}s ease-in-out infinite`,
-                        animationDelay: `${i * -3.5}s`, filter: 'blur(2px)',
-                    }} />
-                ))}
-            </div>
+            <div className="absolute inset-0 bg-black pointer-events-none z-50 transition-opacity duration-700" style={{ opacity: transitioning ? 1 : 0 }} />
 
-            <CloudBg />
-
-            <div className="absolute inset-0 bg-black pointer-events-none z-50 transition-opacity duration-700"
-                style={{ opacity: transitioning ? 1 : 0 }} />
-
-            <button onClick={toggleFullscreen} style={{
-                position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', right: 'max(16px, env(safe-area-inset-right))',
-                zIndex: 60, width: 44, height: 44, borderRadius: 14,
-                background: 'rgba(255,255,255,.9)', border: '2.5px solid rgba(255,255,255,.8)',
-                boxShadow: '0 4px 12px rgba(0,0,0,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#374151', cursor: 'pointer', transition: 'all .2s'
-            }}>
+            <button
+                onClick={toggleFullscreen}
+                className="absolute z-60 flex h-11 w-11 items-center justify-center rounded-xl border-2 border-white/70 bg-white/90 text-slate-700 shadow-[0_4px_0_rgba(0,0,0,.14),0_8px_20px_rgba(0,0,0,.14)] transition hover:-translate-y-0.5"
+                style={{ top: 'max(16px, env(safe-area-inset-top))', right: 'max(16px, env(safe-area-inset-right))' }}
+            >
                 {isFullscreen ? <Icons.Minimize /> : <Icons.Fullscreen />}
             </button>
 
-            <div className="kids-slide-up" style={{
-                position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-                display: 'flex', flexDirection: 'column',
-                padding: `max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))`
-            }}>
-                <div style={{ flex: '1 1 auto' }} />
-
-                <div style={{
-                    margin: '0 auto', width: '100%', maxWidth: isMobile ? 340 : 420,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 12 : 16,
-                    flex: '0 0 auto'
-                }}>
-
-                    <div onClick={() => { setLogoWiggle(true); setTimeout(() => setLogoWiggle(false), 1200); }}
-                        style={{ cursor: 'pointer', position: 'relative' }}>
-                        <div className={logoWiggle ? 'kids-wiggle' : 'kids-float'} style={{
-                            width: isMobile ? 88 : 108, height: isMobile ? 88 : 108,
-                            background: 'rgba(255,255,255,.95)', borderRadius: 32,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            boxShadow: '0 12px 40px rgba(0,0,0,.15)',
-                            border: '4px solid rgba(255,255,255,.8)',
-                        }}>
-                            <svg width={isMobile ? 56 : 68} height={isMobile ? 56 : 68} viewBox="0 0 64 64" fill="none">
-                                <defs>
-                                    <radialGradient id="menu-face" cx="50%" cy="40%" r="60%">
-                                        <stop offset="0%" stopColor="#7de09a" /><stop offset="100%" stopColor="#3aad5a" />
-                                    </radialGradient>
-                                </defs>
-                                <ellipse cx="18" cy="16" rx="8" ry="11" fill="#5ec97c" />
-                                <ellipse cx="46" cy="16" rx="8" ry="11" fill="#5ec97c" />
-                                <ellipse cx="18" cy="15" rx="4" ry="6" fill="#2d9148" />
-                                <ellipse cx="46" cy="15" rx="4" ry="6" fill="#2d9148" />
-                                <ellipse cx="32" cy="38" rx="22" ry="18" fill="url(#menu-face)" />
-                                <circle cx="24" cy="34" r="4.5" fill="#fff" /><circle cx="40" cy="34" r="4.5" fill="#fff" />
-                                <circle cx="25" cy="35" r="2.5" fill="#1a1a2e" /><circle cx="41" cy="35" r="2.5" fill="#1a1a2e" />
-                                <circle cx="26" cy="34" r="1" fill="#fff" /><circle cx="42" cy="34" r="1" fill="#fff" />
-                                <path d="M27 41 Q32 46 37 41" stroke="#1a5c2e" strokeWidth="2" fill="none" strokeLinecap="round" />
-                                <circle cx="24" cy="44" r="4" fill="#ff9ff3" opacity=".5" />
-                                <circle cx="40" cy="44" r="4" fill="#ff9ff3" opacity=".5" />
-                            </svg>
-                        </div>
-                        <div style={{
-                            position: 'absolute', inset: -8, borderRadius: 40,
-                            border: '3px solid rgba(255,255,255,.5)',
-                            animation: 'kids-pulse-ring 2s ease-out infinite',
-                        }} />
-                    </div>
-
-                    <div style={{ textAlign: 'center', lineHeight: 1 }}>
-                        <h1 style={{ fontFamily: KF_DISPLAY, fontSize: isMobile ? 32 : 42, fontWeight: 400, color: '#fff', textShadow: '0 4px 0 rgba(0,100,50,.25)', margin: 0 }}>Mini Zoo</h1>
-                        <h2 style={{ fontFamily: KF_DISPLAY, fontSize: isMobile ? 22 : 28, fontWeight: 400, color: 'rgba(255,255,255,.9)', textShadow: '0 3px 0 rgba(0,100,50,.2)', margin: 0 }}>Explorer</h2>
-                    </div>
-
-                    <div style={{
-                        width: '100%', background: 'rgba(255,255,255,.88)', borderRadius: 24,
-                        padding: isMobile ? '14px 16px' : '18px 22px',
-                        boxShadow: '0 8px 32px rgba(0,0,0,.1)', border: '3px solid rgba(255,255,255,.9)',
-                    }}>
-                        <p style={{ fontSize: isMobile ? 13 : 14, color: '#374151', lineHeight: 1.65, fontFamily: KF, fontWeight: 600 }}>
-                            Welcome to Bulusan Mini Zoo! Explore the grounds, discover amazing animals, feed them, and complete all tasks to become a Zoo Master!
-                        </p>
-                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '2px dashed #E5E7EB' }}>
-                            <p style={{ fontSize: 11.5, color: '#9CA3AF', fontFamily: KF, fontWeight: 700 }}>
-                                {device === 'desktop'
-                                    ? 'WASD to move  ·  Space to jump  ·  Shift to run  ·  E / F to interact  ·  C for photo'
-                                    : 'Joystick to move  ·  Tap buttons to interact  ·  Camera to take photos'
-                                }
-                            </p>
-                        </div>
-                    </div>
-
-                    <Btn3D onClick={handlePlay} color="#ff6b9d" size="xl" icon={<Icons.Play />}
-                        style={{ width: '100%', fontFamily: KF_DISPLAY, fontSize: isMobile ? 20 : 24, letterSpacing: '.04em', animation: 'glow-pulse 2.4s ease-in-out infinite', justifyContent: 'center' }}>
-                        Play Game
-                    </Btn3D>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%' }}>
-                        <KidsToggle enabled={settings.musicEnabled} onChange={v => save({ musicEnabled: v })} label="Music" icon={<Icons.Music />} color="#a29bfe" />
-                        <KidsToggle enabled={settings.soundEnabled} onChange={v => save({ soundEnabled: v })} label="Sound" icon={<Icons.Sound />} color="#74b9ff" />
-                    </div>
-
-                    <button onClick={() => { window.location.href = BULUSAN_ZOO_URL; }} style={{
-                        all: 'unset', boxSizing: 'border-box', width: '100%', padding: '11px 24px',
-                        borderRadius: 9999, border: '2.5px solid rgba(255,255,255,.6)',
-                        background: 'rgba(255,255,255,.25)', color: 'rgba(255,255,255,.9)',
-                        fontFamily: KF, fontSize: isMobile ? 14 : 15, fontWeight: 800,
-                        cursor: 'pointer', transition: 'background .18s', backdropFilter: 'blur(4px)',
-                        textAlign: 'center',
-                    }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.38)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.25)'; }}
+            <div
+                className="kids-slide-up absolute inset-0 flex flex-col"
+                style={{
+                    padding: 'max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))',
+                }}
+            >
+                <div className="pt-3 text-center leading-none text-white">
+                    <h1
+                        className="font-bold tracking-[0.04em]"
+                        style={{
+                            fontFamily: KF_DISPLAY,
+                            fontSize: isMobile ? 62 : 86,
+                            textShadow: '0 4px 0 rgba(18, 92, 45, .35), 0 10px 26px rgba(0,0,0,.12)'
+                        }}
                     >
-                        Quit
-                    </button>
-
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', fontFamily: KF, fontWeight: 700, textAlign: 'center' }}>
-                        An educational game by Bulusan Zoo
-                    </p>
+                        BULUSAN ZOO
+                    </h1>
+                    <h2
+                        className="font-bold tracking-[0.03em]"
+                        style={{
+                            marginTop: isMobile ? 6 : 10,
+                            fontFamily: KF_DISPLAY,
+                            fontSize: isMobile ? 56 : 74,
+                            textShadow: '0 4px 0 rgba(18, 92, 45, .32), 0 10px 26px rgba(0,0,0,.12)'
+                        }}
+                    >
+                        Mini Zoo Game
+                    </h2>
                 </div>
 
-                <div style={{ flex: '1 1 auto' }} />
+                <div className="flex flex-1 items-center justify-center">
+                    <div className="flex w-full max-w-90 flex-col gap-3">
+                        <Btn3D
+                            onClick={handlePlay}
+                            color="#ff6b9d"
+                            size="xl"
+                            icon={<Icons.Play />}
+                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                        >
+                            PLAY
+                        </Btn3D>
+                        <Btn3D
+                            onClick={() => setMenuSettingsOpen(v => !v)}
+                            color="#74b9ff"
+                            size="xl"
+                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                        >
+                            SETTINGS
+                        </Btn3D>
+                        <Btn3D
+                            onClick={() => { window.location.href = BULUSAN_ZOO_URL; }}
+                            color="#95a5a6"
+                            size="xl"
+                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                        >
+                            QUIT
+                        </Btn3D>
+
+                        {menuSettingsOpen && (
+                            <div className="mt-2 rounded-2xl border-2 border-white/60 bg-white/88 p-3 shadow-[0_8px_24px_rgba(0,0,0,.14)]">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <KidsToggle enabled={settings.musicEnabled} onChange={v => save({ musicEnabled: v })} label="Music" icon={<Icons.Music />} color="#a29bfe" />
+                                    <KidsToggle enabled={settings.soundEnabled} onChange={v => save({ soundEnabled: v })} label="Sound" icon={<Icons.Sound />} color="#74b9ff" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex items-end justify-between px-1 pb-1 text-white/90" style={{ fontFamily: KF_DISPLAY, textShadow: '0 2px 0 rgba(18, 92, 45, .35)' }}>
+                    <span style={{ fontSize: isMobile ? 34 : 28 }}>v.1.0</span>
+                    <span style={{ fontSize: isMobile ? 46 : 34 }}>{new Date().getFullYear()}</span>
+                </div>
+
+                <div className="pt-2 text-center text-white/80" style={{ fontFamily: KF, fontSize: isMobile ? 12 : 13 }}>
+                    {device === 'desktop'
+                        ? 'WASD move, Space jump, Shift run, E/F interact, C camera'
+                        : 'Use joystick and action buttons to explore and interact'}
+                </div>
             </div>
         </div>
     );
@@ -680,16 +493,6 @@ export function MainMenu({ onStart, isVisible }) {
 export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks }) {
     const device = useDeviceType();
     const allDone = completedTasks === totalTasks && totalTasks > 0;
-    const [taskBounce, setTaskBounce] = useState(false);
-    const prevCompleted = useRef(completedTasks);
-
-    useEffect(() => {
-        if (completedTasks > prevCompleted.current) {
-            setTaskBounce(true);
-            setTimeout(() => setTaskBounce(false), 800);
-        }
-        prevCompleted.current = completedTasks;
-    }, [completedTasks]);
 
     const hudBtn = {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -701,7 +504,7 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
 
     return (
         <>
-            <div style={{ position: 'absolute', top: HUD_EDGE, left: HUD_EDGE, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, left: `max(${HUD_EDGE}px, env(safe-area-inset-left) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button onClick={onMenuClick} style={{ ...hudBtn, width: 44, height: 44, borderRadius: 16 }}
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 0 rgba(0,0,0,.14), 0 8px 20px rgba(0,0,0,.18)'; }}
                     onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 0 rgba(0,0,0,.14), 0 6px 16px rgba(0,0,0,.12)'; }}
@@ -718,8 +521,8 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
                 </div>
             </div>
 
-            <div style={{ position: 'absolute', top: HUD_EDGE, right: HUD_EDGE, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={onTasksClick} className={taskBounce ? 'kids-bounce' : ''} style={{
+            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, right: `max(${HUD_EDGE}px, env(safe-area-inset-right) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={onTasksClick} style={{
                     ...hudBtn,
                     background: allDone ? 'rgba(255,215,0,.92)' : 'rgba(255,255,255,.92)',
                     border: `2px solid ${allDone ? '#f9ca24' : 'rgba(255,255,255,.7)'}`,
@@ -748,21 +551,18 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
 
 export function SettingsPanel({ isOpen, onClose, onQuit }) {
     const { isFullscreen, toggleFullscreen } = useFullscreen();
-    const [settings, setSettings] = useState(() => {
-        try { const s = localStorage.getItem('minizoo_settings'); return s ? JSON.parse(s) : { musicEnabled: true, soundEnabled: true }; }
-        catch { return { musicEnabled: true, soundEnabled: true }; }
-    });
+    const [settings, setSettings] = useState(() => readSettings());
 
     const save = useCallback((updates) => {
         const updated = { ...settings, ...updates };
         setSettings(updated);
-        try { localStorage.setItem('minizoo_settings', JSON.stringify(updated)); } catch { }
+        persistSettings(updated);
     }, [settings]);
 
     const KB = [
         { action: 'Move', key: 'WASD' }, { action: 'Jump', key: 'Space' },
         { action: 'Run', key: 'Shift' }, { action: 'Interact', key: 'E' },
-        { action: 'Feed', key: 'F' }, { action: 'Photo', key: 'C' }, { action: 'Close', key: 'Esc' },
+        { action: 'Feed', key: 'F' }, { action: 'Close', key: 'Esc' },
     ];
 
     return (
@@ -863,7 +663,7 @@ function TaskItem({ task, onClick }) {
 
 export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, isTouchDevice }) {
     if (!visible) return null;
-    const bottomOffset = isTouchDevice ? 240 : 82;
+    const bottomOffset = isTouchDevice ? 'max(190px, env(safe-area-inset-bottom) + 142px)' : 82;
     return (
         <div style={{
             position: 'fixed', bottom: bottomOffset, left: 0, right: 0,
@@ -877,6 +677,7 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
                 border: '3px solid #ffd32a',
                 display: 'flex', alignItems: 'center', gap: 10,
                 whiteSpace: 'nowrap',
+                maxWidth: 'calc(100vw - 28px)',
             }}>
                 <span style={{ color: '#e17055', display: 'flex' }}><Icons.Paw /></span>
                 <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, color: '#374151' }}>{animalName}</span>
@@ -887,9 +688,10 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
                     </div>
                 )}
                 {isTouchDevice && (
-                    <span style={{ fontFamily: KF, fontSize: 11, fontWeight: 700, color: '#9CA3AF' }}>
-                        Use buttons below
-                    </span>
+                    <div style={{ display: 'flex', gap: 7 }}>
+                        <KeyBtn label="Tap" text="Feed" color="#ff9f43" onClick={onFeed} />
+                        <KeyBtn label="Tap" text="View" color="#74b9ff" onClick={onViewDetails} />
+                    </div>
                 )}
             </div>
         </div>
@@ -916,7 +718,7 @@ export function MobileInteractionButtons({ visible, onFeed, onViewDetails }) {
     if (!visible) return null;
     return (
         <div style={{
-            position: 'fixed', bottom: 'max(120px, env(safe-area-inset-bottom) + 80px)', left: 0, right: 0,
+            position: 'fixed', bottom: 'max(98px, env(safe-area-inset-bottom) + 56px)', left: 0, right: 0,
             zIndex: 100, display: 'flex', justifyContent: 'center', pointerEvents: 'none'
         }}>
             <div style={{
@@ -957,11 +759,37 @@ function TouchBtn({ label, color, shadow, icon, onClick }) {
     );
 }
 
-export function AnimalInfoModal({ animal, onClose, onFeed, isFed }) {
+export function AnimalInfoModal({ animal, onClose, onFeed, isFed, placement = 'center', preview = false, onView, bottomOffset }) {
     if (!animal) return null;
     const fedText = isFed ? `The ${animal.name} has been fed.` : `The ${animal.name} is hungry.`;
+
+    if (preview) {
+        return (
+            <Modal
+                isOpen={!!animal}
+                onClose={onClose}
+                title={animal.name}
+                placement={placement}
+                showClose={true}
+                showBackdrop={false}
+                bottomOffset={bottomOffset}
+            >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <Btn3D onClick={onFeed} color={isFed ? '#95a5a6' : '#00b894'} disabled={isFed} icon={<Icons.Feed />} style={{ justifyContent: 'center', width: '100%' }}>
+                            {isFed ? 'Fed' : 'Feed'}
+                        </Btn3D>
+                        <Btn3D onClick={onView} color="#74b9ff" icon={<Icons.Eye />} style={{ justifyContent: 'center', width: '100%' }}>
+                            View
+                        </Btn3D>
+                    </div>
+                </div>
+            </Modal>
+        );
+    }
+
     return (
-        <Modal isOpen={!!animal} onClose={onClose} title={animal.name}>
+        <Modal isOpen={!!animal} onClose={onClose} title={animal.name} placement={placement}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                     <div style={{ width: 72, height: 72, flexShrink: 0, borderRadius: 22, background: 'linear-gradient(135deg, #ffeaa7, #fdcb6e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(253,203,110,.4)', border: '3px solid rgba(255,255,255,.8)' }}>
@@ -1005,7 +833,7 @@ export function FeedingSuccessNotification({ visible, animalName, onHide }) {
     if (!visible) return null;
     return (
         <div style={{
-            position: 'fixed', top: 18, left: 0, right: 0,
+            position: 'fixed', top: 'max(18px, env(safe-area-inset-top) + 8px)', left: 0, right: 0,
             zIndex: 9999, display: 'flex', justifyContent: 'center', pointerEvents: 'none'
         }}>
             <div className="kids-pop" style={{
@@ -1051,15 +879,53 @@ export function QuitModal({ isOpen, onConfirm, onCancel }) {
     );
 }
 
+export function WelcomePopup({ visible, message }) {
+    if (!visible) return null;
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 'max(72px, env(safe-area-inset-top) + 56px)',
+            left: 0,
+            right: 0,
+            zIndex: 130,
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none'
+        }}>
+            <div className="welcome-fade" style={{
+                background: 'rgba(20, 28, 36, 0.84)',
+                color: '#f8fafc',
+                borderRadius: 999,
+                border: '1px solid rgba(255,255,255,.25)',
+                padding: '10px 18px',
+                fontFamily: KF,
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: '.03em',
+                boxShadow: '0 10px 26px rgba(0,0,0,.22)'
+            }}>
+                {message}
+            </div>
+        </div>
+    );
+}
+
 export function Joystick({ baseRef, stickRef }) {
     const isTouch = useIsTouch();
+    const { isLandscape, isShort } = useViewportInfo();
     if (!isTouch) return null;
+
+    const size = isLandscape || isShort ? 96 : 120;
+    const bottom = isLandscape || isShort
+        ? 'max(10px, env(safe-area-inset-bottom))'
+        : 'max(24px, env(safe-area-inset-bottom))';
+
     return (
         <div ref={baseRef} style={{
             position: 'fixed',
-            bottom: 'max(24px, env(safe-area-inset-bottom))',
+            bottom,
             left: 'max(16px, env(safe-area-inset-left))',
-            width: 120, height: 120, borderRadius: '50%',
+            width: size, height: size, borderRadius: '50%',
             background: 'radial-gradient(circle, rgba(116,185,255,.3) 0%, rgba(162,155,254,.25) 100%)',
             border: '3px solid rgba(255,255,255,.65)',
             boxShadow: '0 8px 32px rgba(0,0,0,.18), inset 0 2px 8px rgba(255,255,255,.2)',
@@ -1068,7 +934,9 @@ export function Joystick({ baseRef, stickRef }) {
         }}>
             <div style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: '2px dashed rgba(255,255,255,.22)' }} />
             <div ref={stickRef} style={{
-                width: 52, height: 52, borderRadius: '50%',
+                width: isLandscape || isShort ? 44 : 52,
+                height: isLandscape || isShort ? 44 : 52,
+                borderRadius: '50%',
                 background: 'linear-gradient(145deg, #74b9ff, #a29bfe)',
                 border: '3px solid rgba(255,255,255,.85)',
                 boxShadow: '0 6px 20px rgba(116,185,255,.55)',
@@ -1084,9 +952,16 @@ export function Joystick({ baseRef, stickRef }) {
 }
 
 export function JumpButton({ jumpRef }) {
-    const isTouch = useIsTouch();
-    if (!isTouch) return null;
     const [pressed, setPressed] = useState(false);
+    const isTouch = useIsTouch();
+    const { isLandscape, isShort } = useViewportInfo();
+    if (!isTouch) return null;
+
+    const size = isLandscape || isShort ? 62 : 74;
+    const bottom = isLandscape || isShort
+        ? 'max(10px, env(safe-area-inset-bottom))'
+        : 'max(24px, env(safe-area-inset-bottom))';
+
     return (
         <button ref={jumpRef}
             onTouchStart={() => setPressed(true)} onTouchEnd={() => setPressed(false)}
@@ -1094,9 +969,9 @@ export function JumpButton({ jumpRef }) {
             style={{
                 all: 'unset', boxSizing: 'border-box',
                 position: 'fixed',
-                bottom: 'max(24px, env(safe-area-inset-bottom))',
+                bottom,
                 right: 'max(16px, env(safe-area-inset-right))',
-                width: 74, height: 74, borderRadius: '50%',
+                width: size, height: size, borderRadius: '50%',
                 background: 'linear-gradient(145deg, #55efc4, #00b894)',
                 border: '3px solid rgba(255,255,255,.8)',
                 boxShadow: pressed
@@ -1108,21 +983,26 @@ export function JumpButton({ jumpRef }) {
                 transition: 'all .1s', zIndex: 110, touchAction: 'none', gap: 2,
             }}>
             <Icons.ArrowUp />
-            <span style={{ fontFamily: KF, fontSize: 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
+            <span style={{ fontFamily: KF, fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
         </button>
     );
 }
 
-export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRegister }) {
+export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRegister, onPhotoCountChange, onBeforeCapture }) {
     const [photos, setPhotos] = useState(() => {
         try { const s = localStorage.getItem('minizoo_photos'); return s ? JSON.parse(s) : []; }
         catch { return []; }
     });
     const [showGallery, setShowGallery] = useState(false);
     const [capturing, setCapturing] = useState(false);
+    const [sequenceActive, setSequenceActive] = useState(false);
+    const [cameraMode, setCameraMode] = useState(false);
     const [flash, setFlash] = useState(false);
     const [selectedPhoto, setSelectedPhoto] = useState(null);
+    const sequenceRef = useRef(false);
+    const captureRef = useRef(false);
     const isTouch = useIsTouch();
+    const { isLandscape, isShort } = useViewportInfo();
 
     const savePhotos = useCallback((list) => {
         try {
@@ -1133,34 +1013,46 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
     }, []);
 
     const capturePhoto = useCallback(() => {
-        if (capturing || !containerRef?.current) return;
+        if (capturing || captureRef.current || !containerRef?.current) return Promise.resolve(false);
+        captureRef.current = true;
         setCapturing(true);
         setFlash(true);
 
-        requestAnimationFrame(() => {
+        return new Promise((resolve) => {
             requestAnimationFrame(() => {
-                try {
-                    const canvas = containerRef.current?.querySelector('canvas');
-                    if (!canvas) { setCapturing(false); setFlash(false); return; }
+                requestAnimationFrame(() => {
+                    try {
+                        const canvas = containerRef.current?.querySelector('canvas');
+                        if (!canvas) {
+                            setCapturing(false);
+                            captureRef.current = false;
+                            setFlash(false);
+                            resolve(false);
+                            return;
+                        }
 
-                    const tmp = document.createElement('canvas');
-                    tmp.width = canvas.width;
-                    tmp.height = canvas.height;
-                    tmp.getContext('2d').drawImage(canvas, 0, 0);
+                        const tmp = document.createElement('canvas');
+                        tmp.width = canvas.width;
+                        tmp.height = canvas.height;
+                        tmp.getContext('2d').drawImage(canvas, 0, 0);
 
-                    const dataUrl = tmp.toDataURL('image/jpeg', 0.78);
-                    const photo = {
-                        id: Date.now(), dataUrl,
-                        animalName: nearbyAnimalName || null,
-                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        date: new Date().toLocaleDateString(),
-                    };
-                    setPhotos(prev => savePhotos([...prev, photo]));
-                } catch (err) {
-                    console.warn('Capture failed:', err);
-                }
-                setCapturing(false);
-                setTimeout(() => setFlash(false), 250);
+                        const dataUrl = tmp.toDataURL('image/jpeg', 0.78);
+                        const photo = {
+                            id: Date.now(), dataUrl,
+                            animalName: nearbyAnimalName || null,
+                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            date: new Date().toLocaleDateString(),
+                        };
+                        setPhotos(prev => savePhotos([...prev, photo]));
+                        resolve(true);
+                    } catch (err) {
+                        console.warn('Capture failed:', err);
+                        resolve(false);
+                    }
+                    setCapturing(false);
+                    captureRef.current = false;
+                    setTimeout(() => setFlash(false), 250);
+                });
             });
         });
     }, [capturing, containerRef, nearbyAnimalName, savePhotos]);
@@ -1176,16 +1068,50 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
         a.href = photo.dataUrl; a.click();
     }, []);
 
-    useEffect(() => {
-        if (!gameStarted) return;
-        const onKey = e => { if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) capturePhoto(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [gameStarted, capturePhoto]);
+    const openCamera = useCallback(() => {
+        setCameraMode(true);
+    }, []);
+
+    const closeCamera = useCallback(() => {
+        setCameraMode(false);
+    }, []);
+
+    const startCaptureSequence = useCallback(async () => {
+        if (sequenceRef.current || captureRef.current) return;
+        sequenceRef.current = true;
+        setSequenceActive(true);
+        setCameraMode(true);
+        try {
+            await onBeforeCapture?.();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await capturePhoto();
+        } finally {
+            await new Promise(resolve => setTimeout(resolve, 90));
+            sequenceRef.current = false;
+            setSequenceActive(false);
+            setCameraMode(false);
+        }
+    }, [onBeforeCapture, capturePhoto]);
 
     useEffect(() => {
-        onRegister?.({ capture: capturePhoto, openGallery: () => setShowGallery(true) });
-    }, [capturePhoto, onRegister]);
+        if (!gameStarted) return;
+        const onKey = e => {
+            if (e.key.toLowerCase() !== 'c' || e.ctrlKey || e.metaKey || e.repeat) return;
+            startCaptureSequence();
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [gameStarted, startCaptureSequence]);
+
+    const isBusy = capturing || sequenceActive;
+
+    useEffect(() => {
+        onRegister?.({ capture: capturePhoto, openCamera, closeCamera, startCaptureSequence, openGallery: () => setShowGallery(true) });
+    }, [capturePhoto, openCamera, closeCamera, startCaptureSequence, onRegister]);
+
+    useEffect(() => {
+        onPhotoCountChange?.(photos.length);
+    }, [photos.length, onPhotoCountChange]);
 
     if (!gameStarted) return null;
 
@@ -1197,7 +1123,7 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
 
             {isTouch && (
                 <div style={{
-                    position: 'fixed', top: 'max(80px, env(safe-area-inset-top) + 60px)', right: 'max(16px, env(safe-area-inset-right))',
+                    position: 'fixed', top: isLandscape || isShort ? 'max(66px, env(safe-area-inset-top) + 46px)' : 'max(80px, env(safe-area-inset-top) + 60px)', right: 'max(16px, env(safe-area-inset-right))',
                     zIndex: 110, display: 'flex', flexDirection: 'column', gap: 12
                 }}>
                     <button onClick={() => setShowGallery(true)} title={`Gallery (${photos.length})`} style={{
@@ -1222,20 +1148,86 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
                             </div>
                         )}
                     </button>
-                    <button onClick={capturePhoto} title="Take Photo" style={{
+                    <button onClick={startCaptureSequence} title={isBusy ? 'Camera Busy' : 'Capture Photo'} style={{
                         all: 'unset', boxSizing: 'border-box',
                         width: 52, height: 52, borderRadius: '50%',
-                        background: capturing ? 'linear-gradient(145deg,#636e72,#2d3436)' : 'linear-gradient(145deg,#fff,#f1f2f6)',
+                        background: isBusy
+                            ? 'linear-gradient(145deg,#636e72,#2d3436)'
+                            : cameraMode
+                                ? 'linear-gradient(145deg,#fff,#f1f2f6)'
+                                : 'linear-gradient(145deg,#74b9ff,#a29bfe)',
                         border: '3px solid rgba(255,255,255,.9)',
-                        boxShadow: capturing ? '0 1px 0 rgba(0,0,0,.2)' : '0 5px 0 rgba(0,0,0,.2), 0 8px 20px rgba(0,0,0,.18)',
-                        cursor: capturing ? 'not-allowed' : 'pointer',
+                        boxShadow: isBusy ? '0 1px 0 rgba(0,0,0,.2)' : '0 5px 0 rgba(0,0,0,.2), 0 8px 20px rgba(0,0,0,.18)',
+                        cursor: isBusy ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: capturing ? '#fff' : '#2d3436',
-                        transform: capturing ? 'translateY(4px) scale(0.95)' : 'scale(1)',
+                        color: isBusy ? '#fff' : (cameraMode ? '#2d3436' : '#fff'),
+                        transform: isBusy ? 'translateY(4px) scale(0.95)' : 'scale(1)',
                         transition: 'all .15s', touchAction: 'none',
                     }}>
                         {capturing ? <Icons.CameraOff /> : <Icons.Camera />}
                     </button>
+                </div>
+            )}
+
+            {cameraMode && (
+                <div style={{
+                    position: 'fixed',
+                    top: 'max(18px, env(safe-area-inset-top) + 8px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 125,
+                    pointerEvents: 'none'
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        borderRadius: 999,
+                        background: 'rgba(14, 20, 30, .82)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,.25)',
+                        padding: '7px 12px',
+                        boxShadow: '0 10px 24px rgba(0,0,0,.2)',
+                        fontFamily: KF,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: '.03em'
+                    }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: capturing ? '#ff6b9d' : '#55efc4', boxShadow: capturing ? '0 0 0 5px rgba(255,107,157,.18)' : '0 0 0 5px rgba(85,239,196,.18)' }} />
+                        {capturing ? 'CAPTURING' : 'CAMERA ACTIVE'}
+                    </div>
+                </div>
+            )}
+
+            {!isTouch && cameraMode && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 'max(18px, env(safe-area-inset-bottom) + 8px)',
+                    left: 0,
+                    right: 0,
+                    zIndex: 120,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    pointerEvents: 'none'
+                }}>
+                    <div style={{
+                        pointerEvents: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 10px',
+                        borderRadius: 16,
+                        background: 'rgba(12, 18, 28, .72)',
+                        border: '1.5px solid rgba(255,255,255,.2)',
+                        backdropFilter: 'blur(8px)'
+                    }}>
+                        <Btn3D onClick={startCaptureSequence} color="#74b9ff" icon={<Icons.Camera />} disabled={isBusy}>
+                            Capture
+                        </Btn3D>
+                        <Btn3D onClick={closeCamera} color="#95a5a6" icon={<Icons.Close />} disabled={isBusy}>
+                            Close
+                        </Btn3D>
+                    </div>
                 </div>
             )}
 
@@ -1297,7 +1289,7 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
                             </div>
                         )}
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, maxHeight: selectedPhoto ? 180 : 340, overflowY: 'auto' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, maxHeight: selectedPhoto ? 180 : 340, overflowY: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }} data-ui-scrollable="true">
                             {[...photos].reverse().map(photo => (
                                 <div key={photo.id} onClick={() => onSelectPhoto(selectedPhoto?.id === photo.id ? null : photo)} style={{ borderRadius: 12, overflow: 'hidden', cursor: 'pointer', border: selectedPhoto?.id === photo.id ? '3px solid #ffd32a' : '2.5px solid #E5E7EB', transition: 'all .15s', transform: selectedPhoto?.id === photo.id ? 'scale(0.96)' : 'scale(1)', position: 'relative' }}>
                                     <img src={photo.dataUrl} alt="Zoo photo" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', display: 'block' }} />
@@ -1320,15 +1312,13 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
     );
 }
 
-export function BottomHotbar({ gameStarted, completedTasks, totalTasks, photos, onCameraClick, onGalleryClick }) {
+export function BottomHotbar({ gameStarted, completedTasks, totalTasks }) {
     const isTouch = useIsTouch();
     if (!gameStarted || isTouch) return null;
 
     const allDone = completedTasks === totalTasks && totalTasks > 0;
 
     const slots = [
-        { id: 'camera', icon: <Icons.Camera />, label: 'C', desc: 'Camera', onClick: onCameraClick, badge: null, bg: null, active: false },
-        { id: 'gallery', icon: <Icons.Gallery />, label: `${photos}`, desc: 'Gallery', onClick: onGalleryClick, badge: photos > 0 ? photos : null, bg: 'linear-gradient(145deg,#a29bfe,#6c5ce7)', active: false },
         { id: 'tasks', icon: allDone ? <Icons.Trophy /> : <Icons.Tasks />, label: `${completedTasks}/${totalTasks}`, desc: 'Tasks', onClick: null, badge: null, bg: allDone ? 'linear-gradient(145deg,#ffd32a,#f9ca24)' : null, active: allDone },
     ];
 
@@ -1380,7 +1370,7 @@ function SidePanel({ isOpen, onClose, side, title, children, accent = '#ff9f43' 
                 zIndex: 190, opacity: isOpen ? 1 : 0,
                 pointerEvents: isOpen ? 'auto' : 'none', transition: 'opacity .25s',
             }} />
-            <div style={{
+            <div data-ui-panel="true" style={{
                 position: 'fixed', top: 0, [side]: 0, height: '100dvh',
                 width: 'min(300px, 90vw)',
                 background: '#fff', zIndex: 195,
@@ -1407,43 +1397,62 @@ function SidePanel({ isOpen, onClose, side, title, children, accent = '#ff9f43' 
                         <Icons.Close />
                     </button>
                 </div>
-                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>{children}</div>
+                <div data-ui-scrollable="true" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}>{children}</div>
             </div>
         </>
     );
 }
 
-function Modal({ isOpen, onClose, title, children, showClose = true }) {
+function Modal({ isOpen, onClose, title, children, showClose = true, placement = 'center', showBackdrop = true, bottomOffset = null }) {
     useEffect(() => {
-        if (isOpen) document.body.style.overflow = 'hidden';
+        if (!isOpen || !showBackdrop) return undefined;
+        document.body.style.overflow = 'hidden';
         return () => { document.body.style.overflow = ''; };
-    }, [isOpen]);
+    }, [isOpen, showBackdrop]);
 
     if (!isOpen) return null;
 
+    const isBottom = placement === 'bottom';
+    const bottomBase = bottomOffset || 'max(16px, env(safe-area-inset-bottom))';
+    const topValue = isBottom
+        ? `calc(100% - ${bottomBase})`
+        : '50%';
+    const translateValue = isBottom ? 'translate(-50%, -100%)' : 'translate(-50%, -50%)';
+
     return (
-        <div style={{
+        <div data-ui-modal="true" style={{
             position: 'fixed', inset: 0, width: '100vw', height: '100dvh',
-            zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 200,
+            pointerEvents: showBackdrop ? 'auto' : 'none',
             padding: 'max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))',
             boxSizing: 'border-box'
         }}>
-            <div onClick={onClose} style={{
+            <div onClick={showBackdrop ? onClose : undefined} style={{
                 position: 'absolute', inset: 0,
-                background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(8px)',
+                background: showBackdrop ? 'rgba(0,0,0,.55)' : 'transparent',
+                backdropFilter: showBackdrop ? 'blur(8px)' : 'none',
+                pointerEvents: showBackdrop ? 'auto' : 'none',
             }} />
-            <div className="kids-pop" style={{
-                position: 'relative', background: '#fff', borderRadius: 28,
+            <div style={{
+                position: 'absolute', left: '50%', top: topValue, transform: translateValue,
+                transition: 'top .28s cubic-bezier(.16,1,.3,1), transform .28s cubic-bezier(.16,1,.3,1), border-radius .28s cubic-bezier(.16,1,.3,1), max-height .28s cubic-bezier(.16,1,.3,1)',
+                background: '#fff', borderRadius: isBottom ? 24 : 28,
                 boxShadow: '0 24px 80px rgba(0,0,0,.25), 0 8px 24px rgba(0,0,0,.15)',
-                width: '100%', maxWidth: 460,
-                maxHeight: 'calc(100dvh - max(32px, env(safe-area-inset-top) + env(safe-area-inset-bottom)))',
+                width: 'min(100%, 520px)', maxWidth: isBottom ? 560 : 460,
+                maxHeight: isBottom
+                    ? 'min(68dvh, 560px)'
+                    : 'calc(100dvh - max(32px, env(safe-area-inset-top) + env(safe-area-inset-bottom)))',
                 display: 'flex', flexDirection: 'column', overflowY: 'auto',
-                padding: '26px 22px 22px', WebkitOverflowScrolling: 'touch'
+                padding: isBottom ? '22px 18px 18px' : '26px 22px 22px',
+                WebkitOverflowScrolling: 'touch',
+                touchAction: 'pan-y',
+                overscrollBehavior: 'contain',
+                pointerEvents: 'auto'
             }}>
                 <div style={{
                     position: 'absolute', top: 0, left: 0, right: 0, height: 5,
                     background: 'linear-gradient(90deg, #ff9f43, #ff6b9d, #a29bfe)',
-                    borderRadius: '28px 28px 0 0',
+                    borderRadius: isBottom ? '24px 24px 0 0' : '28px 28px 0 0',
                 }} />
                 {showClose && (
                     <button onClick={onClose} style={{

@@ -4,18 +4,50 @@ import { clone as cloneWithSkeleton } from 'three/examples/jsm/utils/SkeletonUti
 import { getTerrainHeight } from './Terrain.jsx';
 
 const ANIMAL_CONFIGS = [
-    { file: 'Fox.gltf', scale: 1.6, speed: 0.06, runSpeed: 0.12, count: 1, name: 'Red Fox', species: 'Vulpes vulpes', emoji: '🦊', description: 'A clever and adaptable predator known for its beautiful red coat and bushy tail.' },
-    { file: 'Deer.gltf', scale: 1.6, speed: 0.05, runSpeed: 0.11, count: 1, name: 'White-tailed Deer', species: 'Odocoileus virginianus', emoji: '🦌', description: 'A graceful herbivore known for the white underside of its tail, often raised as an alarm signal.' },
-    { file: 'Wolf.gltf', scale: 2.2, speed: 0.07, runSpeed: 0.14, count: 1, name: 'Gray Wolf', species: 'Canis lupus', emoji: '🐺', description: 'A social pack animal and apex predator, known for its complex communication through howling.' },
-    { file: 'Horse.gltf', scale: 2.0, speed: 0.08, runSpeed: 0.16, count: 1, name: 'Domestic Horse', species: 'Equus caballus', emoji: '🐴', description: 'A majestic animal that has been a companion to humans for thousands of years.' },
-    { file: 'Donkey.gltf', scale: 2.6, speed: 0.05, runSpeed: 0.09, count: 1, name: 'Donkey', species: 'Equus asinus', emoji: '🫏', description: 'A sure-footed and hardy animal, often used as a working companion.' },
-    { file: 'Cow.gltf', scale: 2.2, speed: 0.04, runSpeed: 0.07, count: 1, name: 'Domestic Cow', species: 'Bos taurus', emoji: '🐄', description: 'A gentle herbivore raised for milk and companionship in farms worldwide.' },
-    { file: 'Alpaca.gltf', scale: 2.2, speed: 0.05, runSpeed: 0.09, count: 1, name: 'Alpaca', species: 'Vicugna pacos', emoji: '🦙', description: 'A fluffy South American camelid, prized for its soft and luxurious fleece.' },
+    { file: 'Fox.gltf', scale: 1.2, speed: 0.06, runSpeed: 0.12, count: 1, name: 'Red Fox', species: 'Vulpes vulpes', emoji: '🦊', description: 'A clever and adaptable predator known for its beautiful red coat and bushy tail.' },
+    { file: 'Deer.gltf', scale: 1.3, speed: 0.05, runSpeed: 0.11, count: 1, name: 'White-tailed Deer', species: 'Odocoileus virginianus', emoji: '🦌', description: 'A graceful herbivore known for the white underside of its tail, often raised as an alarm signal.' },
+    { file: 'Wolf.gltf', scale: 1.2, speed: 0.07, runSpeed: 0.14, count: 1, name: 'Gray Wolf', species: 'Canis lupus', emoji: '🐺', description: 'A social pack animal and apex predator, known for its complex communication through howling.' },
+    { file: 'Horse.gltf', scale: 1.3, speed: 0.08, runSpeed: 0.16, count: 1, name: 'Domestic Horse', species: 'Equus caballus', emoji: '🐴', description: 'A majestic animal that has been a companion to humans for thousands of years.' },
+    { file: 'Donkey.gltf', scale: 1.5, speed: 0.05, runSpeed: 0.09, count: 1, name: 'Donkey', species: 'Equus asinus', emoji: '🫏', description: 'A sure-footed and hardy animal, often used as a working companion.' },
+    { file: 'Cow.gltf', scale: 1.1, speed: 0.04, runSpeed: 0.07, count: 1, name: 'Domestic Cow', species: 'Bos taurus', emoji: '🐄', description: 'A gentle herbivore raised for milk and companionship in farms worldwide.' },
+    { file: 'Alpaca.gltf', scale: 1.1, speed: 0.05, runSpeed: 0.09, count: 1, name: 'Alpaca', species: 'Vicugna pacos', emoji: '🦙', description: 'A fluffy South American camelid, prized for its soft and luxurious fleece.' },
     { file: 'Husky.gltf', scale: 1.6, speed: 0.07, runSpeed: 0.14, count: 1, name: 'Siberian Husky', species: 'Canis lupus familiaris', emoji: '🐕', description: 'An energetic sled dog breed known for its striking blue eyes and thick double coat.' },
     { file: 'ShibaInu.gltf', scale: 1.3, speed: 0.06, runSpeed: 0.11, count: 1, name: 'Shiba Inu', species: 'Canis lupus familiaris', emoji: '🐕', description: 'A small, agile Japanese breed known for its spirited personality and fox-like appearance.' },
-    { file: 'Stag.gltf', scale: 3.2, speed: 0.06, runSpeed: 0.13, count: 1, name: 'Red Deer Stag', species: 'Cervus elaphus', emoji: '🦌', description: 'A magnificent male deer with impressive antlers, symbol of wild forests.' },
-    { file: 'Bull.gltf', scale: 2.6, speed: 0.035, runSpeed: 0.08, count: 1, name: 'Bull', species: 'Bos taurus', emoji: '🐃', description: 'A powerful and muscular male bovine, respected for its strength and presence.' },
+    { file: 'Stag.gltf', scale: 1.3, speed: 0.06, runSpeed: 0.13, collisionRadius: 2.0, count: 1, name: 'Red Deer Stag', species: 'Cervus elaphus', emoji: '🦌', description: 'A magnificent male deer with impressive antlers, symbol of wild forests.' },
+    { file: 'Bull.gltf', scale: 1.4, speed: 0.045, runSpeed: 0.085, collisionRadius: 1.8, count: 1, name: 'Bull', species: 'Bos taurus', emoji: '🐃', description: 'A powerful and muscular male bovine, respected for its strength and presence.' },
 ];
+
+function isBlockedByObstacle(x, z, radius, obstacles) {
+    if (!obstacles || obstacles.length === 0) return false;
+    for (const obs of obstacles) {
+        const dx = x - obs.x;
+        const dz = z - obs.z;
+        const minDist = radius + obs.radius;
+        if (dx * dx + dz * dz < minDist * minDist) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function findSpawnPosition(spawnIndex, totalAnimals, bounds, radius, obstacles) {
+    for (let i = 0; i < 40; i++) {
+        const ring = 30 + (spawnIndex * 14) + Math.random() * 18;
+        const angle = (spawnIndex / totalAnimals) * Math.PI * 2 + Math.random() * Math.PI * 0.8;
+        const x = Math.cos(angle) * ring;
+        const z = Math.sin(angle) * ring;
+        if (Math.abs(x) > bounds - radius || Math.abs(z) > bounds - radius) continue;
+        if (!isBlockedByObstacle(x, z, radius, obstacles)) {
+            return { x, z };
+        }
+    }
+
+    // Safe fallback if all sampled points are blocked.
+    return {
+        x: Math.cos(Math.random() * Math.PI * 2) * 50,
+        z: Math.sin(Math.random() * Math.PI * 2) * 50,
+    };
+}
 
 class GLTFAnimal {
     // Added 'obstacles' to the constructor
@@ -71,8 +103,13 @@ class GLTFAnimal {
         this.state = 'idle';
         this.turnSpeed = 0.04;
         this.bounds = 170;
+        this.radius = config.collisionRadius ?? Math.max(1.1, config.scale * 0.65);
         this.currentSpeed = 0;
         this.targetSpeed = 0;
+
+        const spawn = findSpawnPosition(spawnIndex, ANIMAL_CONFIGS.length, this.bounds, this.radius, this.obstacles);
+        this.pos.x = spawn.x;
+        this.pos.z = spawn.z;
 
         const h = getTerrainHeight(this.pos.x, this.pos.z);
         this.group.position.set(this.pos.x, h, this.pos.z);
@@ -133,11 +170,10 @@ class GLTFAnimal {
 
             // --- NEW: ANIMAL COLLISION DETECTION ---
             if (this.obstacles && this.obstacles.length > 0) {
-                const ANIMAL_RADIUS = this.config.scale * 1.5;
                 for (const obs of this.obstacles) {
                     const dx = nextX - obs.x;
                     const dz = nextZ - obs.z;
-                    if (dx * dx + dz * dz < Math.pow(ANIMAL_RADIUS + obs.radius, 2)) {
+                    if (dx * dx + dz * dz < Math.pow(this.radius + obs.radius, 2)) {
                         hitObstacle = true;
                         break;
                     }

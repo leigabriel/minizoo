@@ -19,8 +19,14 @@ export function createMovementHandler(camera, state) {
     let smoothPitch = 0;
     let smoothYaw = 0;
     let lastTime = performance.now();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
 
     return function handleMovement() {
+        if (state.cameraControlLockedUntil && performance.now() < state.cameraControlLockedUntil) {
+            return;
+        }
+
         // Frame-rate independent delta time
         const currentTime = performance.now();
         const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
@@ -30,18 +36,10 @@ export function createMovementHandler(camera, state) {
         const maxSpeed = isRunning ? RUN_SPEED : WALK_SPEED;
 
         // Forward direction in world space (negative Z is forward when looking down -Z)
-        const forward = new THREE.Vector3(
-            -Math.sin(state.yaw),
-            0,
-            -Math.cos(state.yaw)
-        );
+        forward.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
 
         // Right direction
-        const right = new THREE.Vector3(
-            Math.cos(state.yaw),
-            0,
-            -Math.sin(state.yaw)
-        );
+        right.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw));
 
         // Calculate target velocity from input
         let targetVX = 0;
@@ -194,6 +192,11 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
     let joystickTouchId = null;
     let lookTouchId = null;
 
+    const isUIInteractionTarget = (target) => {
+        if (!(target instanceof Element)) return false;
+        return !!target.closest('[data-ui-scrollable="true"], [data-ui-modal="true"], [data-ui-panel="true"], button, a, input, textarea, select, [role="button"]');
+    };
+
     const updateJoystick = (touch) => {
         if (!baseRef.current) return;
         const rect = baseRef.current.getBoundingClientRect();
@@ -238,6 +241,10 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
 
     const handleTouchStart = (e) => {
         for (const touch of e.changedTouches) {
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
+            }
+
             if (jumpBtnRef?.current && isInsideElement(touch, jumpBtnRef.current)) {
                 if (!state.isJumping && state.isGrounded) {
                     state.velocityY = JUMP_FORCE;
@@ -266,9 +273,15 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
     };
 
     const handleTouchMove = (e) => {
+        let shouldPreventDefault = false;
         for (const touch of e.changedTouches) {
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
+            }
+
             if (touch.identifier === joystickTouchId && state.sActive) {
                 updateJoystick(touch);
+                shouldPreventDefault = true;
             }
 
             if (touch.identifier === lookTouchId && state.lActive) {
@@ -279,13 +292,20 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
                 state.pitch = Math.max(-1.2, Math.min(1.2, state.pitch));
                 state.lx = touch.clientX;
                 state.ly = touch.clientY;
+                shouldPreventDefault = true;
             }
         }
-        e.preventDefault();
+        if (shouldPreventDefault) {
+            e.preventDefault();
+        }
     };
 
     const handleTouchEnd = (e) => {
         for (const touch of e.changedTouches) {
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
+            }
+
             if (touch.identifier === joystickTouchId) {
                 resetJoystick();
             }

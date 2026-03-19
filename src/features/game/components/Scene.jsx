@@ -20,10 +20,10 @@ export function createCamera() {
 
 export function createRenderer(container) {
     const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
+    const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 1.2) : Math.min(window.devicePixelRatio, 1.5);
 
     const renderer = new THREE.WebGLRenderer({
-        antialias: !isMobile && window.devicePixelRatio < 2,
+        antialias: !isMobile && window.devicePixelRatio <= 1.5,
         powerPreference: 'high-performance',
         stencil: false,
         depth: true,
@@ -57,7 +57,7 @@ export function createLighting(scene) {
     sun.position.set(100, 150, 80);
     sun.castShadow = true;
 
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -250;
     sun.shadow.camera.right = 250;
     sun.shadow.camera.top = 250;
