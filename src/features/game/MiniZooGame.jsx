@@ -433,12 +433,16 @@ function MiniZooGame() {
     useEffect(() => {
         const info = nearbyAnimal ? (nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config) : null;
         if (!info) {
-            setIsCompactAnimalPopupDismissed(false);
-            setSelectedAnimal(null);
+            setTimeout(() => {
+                setIsCompactAnimalPopupDismissed(false);
+                setSelectedAnimal(null);
+            }, 0);
             return;
         }
         if (animalModalPlacement !== 'center') {
-            setIsCompactAnimalPopupDismissed(false);
+            setTimeout(() => {
+                setIsCompactAnimalPopupDismissed(false);
+            }, 0);
         }
     }, [nearbyAnimal, animalModalPlacement]);
 

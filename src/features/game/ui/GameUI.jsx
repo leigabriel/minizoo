@@ -263,13 +263,14 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
 
     return (
         <button
+            data-ui-button="true"
             onClick={!disabled ? onClick : undefined}
             onMouseEnter={() => !disabled && setHovered(true)}
             onMouseLeave={() => { setHovered(false); setPressed(false); }}
             onMouseDown={() => !disabled && setPressed(true)}
             onMouseUp={() => setPressed(false)}
             onTouchStart={(e) => { e.preventDefault(); !disabled && setPressed(true); }}
-            onTouchEnd={() => { setPressed(false); !disabled && onClick?.(); }}
+            onTouchEnd={(e) => { e.preventDefault(); setPressed(false); !disabled && onClick?.(); }}
             style={{
                 all: 'unset',
                 boxSizing: 'border-box',
@@ -505,7 +506,7 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
     return (
         <>
             <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, left: `max(${HUD_EDGE}px, env(safe-area-inset-left) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={onMenuClick} style={{ ...hudBtn, width: 44, height: 44, borderRadius: 16 }}
+                <button data-ui-button="true" onClick={onMenuClick} style={{ ...hudBtn, width: 44, height: 44, borderRadius: 16 }}
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 0 rgba(0,0,0,.14), 0 8px 20px rgba(0,0,0,.18)'; }}
                     onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 0 rgba(0,0,0,.14), 0 6px 16px rgba(0,0,0,.12)'; }}
                     onMouseDown={e => { e.currentTarget.style.transform = 'translateY(2px)'; e.currentTarget.style.boxShadow = '0 1px 0 rgba(0,0,0,.14)'; }}
@@ -522,7 +523,7 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
             </div>
 
             <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, right: `max(${HUD_EDGE}px, env(safe-area-inset-right) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={onTasksClick} style={{
+                <button data-ui-button="true" onClick={onTasksClick} style={{
                     ...hudBtn,
                     background: allDone ? 'rgba(255,215,0,.92)' : 'rgba(255,255,255,.92)',
                     border: `2px solid ${allDone ? '#f9ca24' : 'rgba(255,255,255,.7)'}`,

@@ -241,21 +241,20 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
 
     const handleTouchStart = (e) => {
         for (const touch of e.changedTouches) {
-            if (isUIInteractionTarget(touch.target)) {
-                continue;
-            }
-
-            if (jumpBtnRef?.current && isInsideElement(touch, jumpBtnRef.current)) {
+            if (jumpBtnRef?.current && (touch.target === jumpBtnRef.current || jumpBtnRef.current.contains(touch.target) || isInsideElement(touch, jumpBtnRef.current))) {
                 if (!state.isJumping && state.isGrounded) {
-                    state.velocityY = JUMP_FORCE;
-                    state.isJumping = true;
-                    state.isGrounded = false;
+                    state.keys[" "] = true;
+                    setTimeout(() => state.keys[" "] = false, 100);
                 }
                 e.preventDefault();
                 continue;
             }
 
-            if (joystickTouchId === null && baseRef.current && isInsideElement(touch, baseRef.current)) {
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
+            }
+
+            if (joystickTouchId === null && baseRef.current && (touch.target === baseRef.current || baseRef.current.contains(touch.target) || isInsideElement(touch, baseRef.current))) {
                 joystickTouchId = touch.identifier;
                 state.sActive = true;
                 updateJoystick(touch);
@@ -275,13 +274,10 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
     const handleTouchMove = (e) => {
         let shouldPreventDefault = false;
         for (const touch of e.changedTouches) {
-            if (isUIInteractionTarget(touch.target)) {
-                continue;
-            }
-
             if (touch.identifier === joystickTouchId && state.sActive) {
                 updateJoystick(touch);
                 shouldPreventDefault = true;
+                continue;
             }
 
             if (touch.identifier === lookTouchId && state.lActive) {
@@ -293,6 +289,11 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
                 state.lx = touch.clientX;
                 state.ly = touch.clientY;
                 shouldPreventDefault = true;
+                continue;
+            }
+
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
             }
         }
         if (shouldPreventDefault) {
@@ -302,16 +303,18 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
 
     const handleTouchEnd = (e) => {
         for (const touch of e.changedTouches) {
-            if (isUIInteractionTarget(touch.target)) {
-                continue;
-            }
-
             if (touch.identifier === joystickTouchId) {
                 resetJoystick();
+                continue;
             }
             if (touch.identifier === lookTouchId) {
                 state.lActive = false;
                 lookTouchId = null;
+                continue;
+            }
+
+            if (isUIInteractionTarget(touch.target)) {
+                continue;
             }
         }
     };
