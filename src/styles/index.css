@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Fredoka+One&display=swap');
 
 html,
 body,
@@ -11,7 +10,8 @@ body,
 }
 
 body {
-    font-family: 'Nunito', 'Fredoka One', system-ui, sans-serif;
+    /* font-family: 'Nunito', 'Fredoka One', system-ui, sans-serif; */
+    font-family: 'Departure Mono', monospace;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;

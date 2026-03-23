@@ -2,10 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'https://bulusanzoo.vercel.app';
 const HUD_EDGE = 14;
-const KF = "'Nunito', 'Fredoka One', system-ui, sans-serif";
-const KF_DISPLAY = "'Fredoka One', 'Nunito', system-ui, sans-serif";
 const SETTINGS_KEY = 'minizoo_settings';
 const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
+let uiAudioCtx = null;
 
 function readSettings() {
     try {
@@ -24,6 +23,58 @@ function persistSettings(updated) {
     } catch {
         return false;
     }
+}
+
+function isUISoundEnabled() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) return true;
+        const parsed = JSON.parse(raw);
+        return parsed?.soundEnabled !== false;
+    } catch {
+        return true;
+    }
+}
+
+export function playGameButtonSfx(kind = 'tap') {
+    if (!isUISoundEnabled()) return;
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!uiAudioCtx) {
+        uiAudioCtx = new AudioCtx();
+    }
+
+    if (uiAudioCtx.state === 'suspended') {
+        uiAudioCtx.resume().catch(() => {});
+    }
+
+    const ctx = uiAudioCtx;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    const baseFreq = kind === 'confirm' ? 690 : 560;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.22, now + 0.06);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1800, now);
+    filter.Q.value = 0.7;
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.11);
 }
 
 function getDeviceType() {
@@ -264,13 +315,14 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
     return (
         <button
             data-ui-button="true"
-            onClick={!disabled ? onClick : undefined}
+            data-sfx-self="true"
+            onClick={!disabled ? () => { playGameButtonSfx('tap'); onClick?.(); } : undefined}
             onMouseEnter={() => !disabled && setHovered(true)}
             onMouseLeave={() => { setHovered(false); setPressed(false); }}
             onMouseDown={() => !disabled && setPressed(true)}
             onMouseUp={() => setPressed(false)}
             onTouchStart={(e) => { e.preventDefault(); !disabled && setPressed(true); }}
-            onTouchEnd={(e) => { e.preventDefault(); setPressed(false); !disabled && onClick?.(); }}
+            onTouchEnd={(e) => { e.preventDefault(); setPressed(false); if (!disabled) { playGameButtonSfx('tap'); onClick?.(); } }}
             style={{
                 all: 'unset',
                 boxSizing: 'border-box',
@@ -281,7 +333,6 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
                 padding: s.padding,
                 fontSize: s.fontSize,
                 borderRadius: s.borderRadius,
-                fontFamily: KF,
                 fontWeight: 800,
                 letterSpacing: '.01em',
                 color: disabled ? 'rgba(255,255,255,.5)' : textColor,
@@ -351,7 +402,7 @@ function KidsToggle({ enabled, onChange, label, icon, color = '#a29bfe' }) {
         >
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <span style={{ color: enabled ? color : '#9CA3AF', display: 'flex' }}>{icon}</span>
-                <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, color: enabled ? '#374151' : '#9CA3AF' }}>{label}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: enabled ? '#374151' : '#9CA3AF' }}>{label}</span>
             </div>
             <div style={{ width: 38, height: 22, borderRadius: 11, background: enabled ? color : '#D1D5DB', position: 'relative', flexShrink: 0, transition: 'background .2s' }}>
                 <div style={{
@@ -413,12 +464,11 @@ export function MainMenu({ onStart, isVisible }) {
                     padding: 'max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))',
                 }}
             >
-                <div className="pt-3 text-center leading-none text-white">
+                <div className="pt-2 text-center leading-none text-white sm:pt-3">
                     <h1
                         className="font-bold tracking-[0.04em]"
                         style={{
-                            fontFamily: KF_DISPLAY,
-                            fontSize: isMobile ? 62 : 86,
+                            fontSize: isMobile ? 'clamp(2.4rem, 9.2vw, 3.8rem)' : 'clamp(3.2rem, 6vw, 5.4rem)',
                             textShadow: '0 4px 0 rgba(18, 92, 45, .35), 0 10px 26px rgba(0,0,0,.12)'
                         }}
                     >
@@ -427,9 +477,8 @@ export function MainMenu({ onStart, isVisible }) {
                     <h2
                         className="font-bold tracking-[0.03em]"
                         style={{
-                            marginTop: isMobile ? 6 : 10,
-                            fontFamily: KF_DISPLAY,
-                            fontSize: isMobile ? 56 : 74,
+                            marginTop: isMobile ? 4 : 8,
+                            fontSize: isMobile ? 'clamp(2rem, 8.2vw, 3.2rem)' : 'clamp(2.8rem, 5.2vw, 4.6rem)',
                             textShadow: '0 4px 0 rgba(18, 92, 45, .32), 0 10px 26px rgba(0,0,0,.12)'
                         }}
                     >
@@ -438,13 +487,13 @@ export function MainMenu({ onStart, isVisible }) {
                 </div>
 
                 <div className="flex flex-1 items-center justify-center">
-                    <div className="flex w-full max-w-90 flex-col gap-3">
+                    <div className="flex w-full max-w-md flex-col gap-3">
                         <Btn3D
                             onClick={handlePlay}
                             color="#ff6b9d"
                             size="xl"
                             icon={<Icons.Play />}
-                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                            style={{ width: '100%', justifyContent: 'center', letterSpacing: '.06em' }}
                         >
                             PLAY
                         </Btn3D>
@@ -452,7 +501,7 @@ export function MainMenu({ onStart, isVisible }) {
                             onClick={() => setMenuSettingsOpen(v => !v)}
                             color="#74b9ff"
                             size="xl"
-                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                            style={{ width: '100%', justifyContent: 'center', letterSpacing: '.06em' }}
                         >
                             SETTINGS
                         </Btn3D>
@@ -460,7 +509,7 @@ export function MainMenu({ onStart, isVisible }) {
                             onClick={() => { window.location.href = BULUSAN_ZOO_URL; }}
                             color="#95a5a6"
                             size="xl"
-                            style={{ width: '100%', justifyContent: 'center', fontFamily: KF_DISPLAY, letterSpacing: '.06em' }}
+                            style={{ width: '100%', justifyContent: 'center', letterSpacing: '.06em' }}
                         >
                             QUIT
                         </Btn3D>
@@ -476,12 +525,12 @@ export function MainMenu({ onStart, isVisible }) {
                     </div>
                 </div>
 
-                <div className="flex items-end justify-between px-1 pb-1 text-white/90" style={{ fontFamily: KF_DISPLAY, textShadow: '0 2px 0 rgba(18, 92, 45, .35)' }}>
+                <div className="flex items-end justify-between px-1 pb-1 text-white/90" style={{ textShadow: '0 2px 0 rgba(18, 92, 45, .35)' }}>
                     <span style={{ fontSize: isMobile ? 34 : 28 }}>v.1.0</span>
                     <span style={{ fontSize: isMobile ? 46 : 34 }}>{new Date().getFullYear()}</span>
                 </div>
 
-                <div className="pt-2 text-center text-white/80" style={{ fontFamily: KF, fontSize: isMobile ? 12 : 13 }}>
+                <div className="pt-1 text-center text-white/80" style={{ fontSize: isMobile ? 11 : 13 }}>
                     {device === 'desktop'
                         ? 'WASD move, Space jump, Shift run, E/F interact, C camera'
                         : 'Use joystick and action buttons to explore and interact'}
@@ -493,7 +542,12 @@ export function MainMenu({ onStart, isVisible }) {
 
 export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks }) {
     const device = useDeviceType();
+    const { w, isLandscape } = useViewportInfo();
     const allDone = completedTasks === totalTasks && totalTasks > 0;
+    const compact = w < 640 || (isLandscape && w < 960);
+
+    const iconButtonSize = compact ? 40 : 44;
+    const explorerAvatarSize = compact ? 24 : 28;
 
     const hudBtn = {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -505,8 +559,8 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
 
     return (
         <>
-            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, left: `max(${HUD_EDGE}px, env(safe-area-inset-left) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button data-ui-button="true" onClick={onMenuClick} style={{ ...hudBtn, width: 44, height: 44, borderRadius: 16 }}
+            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, left: `max(${HUD_EDGE}px, env(safe-area-inset-left) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: compact ? 6 : 8 }}>
+                <button data-ui-button="true" onClick={onMenuClick} style={{ ...hudBtn, width: iconButtonSize, height: iconButtonSize, borderRadius: compact ? 13 : 16 }}
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 0 rgba(0,0,0,.14), 0 8px 20px rgba(0,0,0,.18)'; }}
                     onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 0 rgba(0,0,0,.14), 0 6px 16px rgba(0,0,0,.12)'; }}
                     onMouseDown={e => { e.currentTarget.style.transform = 'translateY(2px)'; e.currentTarget.style.boxShadow = '0 1px 0 rgba(0,0,0,.14)'; }}
@@ -514,33 +568,33 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
                     <Icons.Menu />
                 </button>
 
-                <div style={{ ...hudBtn, cursor: 'default', borderRadius: 9999, padding: '5px 14px 5px 7px', gap: 7 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #ffeaa7, #fdcb6e)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e17055', border: '2px solid rgba(255,255,255,.8)' }}>
+                <div style={{ ...hudBtn, cursor: 'default', borderRadius: 9999, padding: compact ? '4px 10px 4px 6px' : '5px 14px 5px 7px', gap: compact ? 6 : 7 }}>
+                    <div style={{ width: explorerAvatarSize, height: explorerAvatarSize, borderRadius: '50%', background: 'linear-gradient(135deg, #ffeaa7, #fdcb6e)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e17055', border: '2px solid rgba(255,255,255,.8)' }}>
                         <Icons.User />
                     </div>
-                    <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, color: '#374151', whiteSpace: 'nowrap' }}>Explorer</span>
+                    <span style={{ fontSize: compact ? 12 : 13, fontWeight: 800, color: '#374151', whiteSpace: 'nowrap' }}>Explorer</span>
                 </div>
             </div>
 
-            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, right: `max(${HUD_EDGE}px, env(safe-area-inset-right) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'absolute', top: `max(${HUD_EDGE}px, env(safe-area-inset-top) + 6px)`, right: `max(${HUD_EDGE}px, env(safe-area-inset-right) + 2px)`, zIndex: 20, display: 'flex', alignItems: 'center', gap: compact ? 6 : 8 }}>
                 <button data-ui-button="true" onClick={onTasksClick} style={{
                     ...hudBtn,
                     background: allDone ? 'rgba(255,215,0,.92)' : 'rgba(255,255,255,.92)',
                     border: `2px solid ${allDone ? '#f9ca24' : 'rgba(255,255,255,.7)'}`,
                     boxShadow: allDone ? '0 4px 0 rgba(200,160,0,.3), 0 6px 20px rgba(249,202,36,.45)' : '0 4px 0 rgba(0,0,0,.12), 0 6px 16px rgba(0,0,0,.1)',
-                    borderRadius: 9999, padding: '7px 14px', gap: 7,
+                    borderRadius: 9999, padding: compact ? '6px 10px' : '7px 14px', gap: compact ? 5 : 7,
                 }}
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.04)'; }}
                     onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
                     <span style={{ color: allDone ? '#e17055' : '#6B7280', display: 'flex' }}>
                         {allDone ? <Icons.Star /> : <Icons.Tasks />}
                     </span>
-                    <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, color: allDone ? '#c0392b' : '#374151' }}>{completedTasks}/{totalTasks}</span>
+                    <span style={{ fontSize: compact ? 12 : 13, fontWeight: 800, color: allDone ? '#c0392b' : '#374151' }}>{completedTasks}/{totalTasks}</span>
                 </button>
 
                 {device === 'desktop' && (
                     <div style={{ ...hudBtn, cursor: 'default', borderRadius: 16, padding: '7px 16px' }}>
-                        <span style={{ fontFamily: KF_DISPLAY, fontSize: 14, background: 'linear-gradient(135deg, #10b981, #059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                        <span style={{ fontSize: 14, background: 'linear-gradient(135deg, #10b981, #059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                             Zoo Explorer
                         </span>
                     </div>
@@ -586,8 +640,8 @@ export function SettingsPanel({ isOpen, onClose, onQuit }) {
                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                 padding: '10px 14px', borderBottom: i < KB.length - 1 ? '1.5px solid #F3F4F6' : 'none',
                             }}>
-                                <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 700, color: '#4B5563' }}>{action}</span>
-                                <span style={{ fontFamily: KF, fontSize: 11, fontWeight: 800, color: '#374151', background: 'linear-gradient(135deg, #f5f6fa, #dfe6e9)', borderRadius: 8, padding: '3px 10px', border: '1.5px solid #D1D5DB', boxShadow: '0 2px 0 #b2bec3' }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#4B5563' }}>{action}</span>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', background: 'linear-gradient(135deg, #f5f6fa, #dfe6e9)', borderRadius: 8, padding: '3px 10px', border: '1.5px solid #D1D5DB', boxShadow: '0 2px 0 #b2bec3' }}>
                                     {key}
                                 </span>
                             </div>
@@ -612,8 +666,8 @@ export function TaskPanel({ isOpen, onClose, tasks, onTaskClick }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ background: 'linear-gradient(135deg, #d4efdf, #a9dfbf)', borderRadius: 20, padding: '14px 16px', border: '2.5px solid rgba(16,185,129,.25)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                        <span style={{ fontFamily: KF, fontWeight: 800, fontSize: 14, color: '#1a5c2e' }}>Progress</span>
-                        <span style={{ fontFamily: KF, fontWeight: 900, fontSize: 16, color: '#059669' }}>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: '#1a5c2e' }}>Progress</span>
+                        <span style={{ fontWeight: 900, fontSize: 16, color: '#059669' }}>
                             {completedCount}/{tasks.length}
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#6ee7b7', marginLeft: 4 }}>({pct}%)</span>
                         </span>
@@ -622,7 +676,7 @@ export function TaskPanel({ isOpen, onClose, tasks, onTaskClick }) {
                         <div style={{ height: '100%', width: `${pct}%`, borderRadius: 9999, background: 'linear-gradient(90deg, #00b894, #55efc4)', transition: 'width .5s cubic-bezier(.16,1,.3,1)' }} />
                     </div>
                     {completedCount === tasks.length && tasks.length > 0 && (
-                        <p className="kids-pop" style={{ fontFamily: KF_DISPLAY, fontSize: 14, color: '#059669', marginTop: 10, textAlign: 'center' }}>
+                        <p className="kids-pop" style={{ fontSize: 14, color: '#059669', marginTop: 10, textAlign: 'center' }}>
                             You are a Zoo Master!
                         </p>
                     )}
@@ -650,11 +704,11 @@ function TaskItem({ task, onClick }) {
             <div style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: task.completed ? 'linear-gradient(135deg, #00b894, #00cec9)' : '#E5E7EB', boxShadow: task.completed ? '0 2px 8px rgba(0,184,148,.4)' : 'none', transition: 'all .2s' }}>
                 {task.completed && <Icons.Check />}
             </div>
-            <span style={{ flex: 1, fontFamily: KF, fontSize: 13, fontWeight: 700, color: task.completed ? '#059669' : '#374151', textDecoration: task.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: task.completed ? '#059669' : '#374151', textDecoration: task.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {task.name}
             </span>
             {task.feedCount > 0 && (
-                <span style={{ fontFamily: KF, fontSize: 11, fontWeight: 800, color: '#78716C', background: '#F5F4F2', borderRadius: 9999, padding: '2px 8px', flexShrink: 0, border: '1.5px solid #E7E5E4' }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#78716C', background: '#F5F4F2', borderRadius: 9999, padding: '2px 8px', flexShrink: 0, border: '1.5px solid #E7E5E4' }}>
                     x{task.feedCount}
                 </span>
             )}
@@ -681,7 +735,7 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
                 maxWidth: 'calc(100vw - 28px)',
             }}>
                 <span style={{ color: '#e17055', display: 'flex' }}><Icons.Paw /></span>
-                <span style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, color: '#374151' }}>{animalName}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#374151' }}>{animalName}</span>
                 {!isTouchDevice && (
                     <div style={{ display: 'flex', gap: 7 }}>
                         <KeyBtn label="F" text="Feed" color="#ff9f43" onClick={onFeed} />
@@ -704,8 +758,7 @@ function KeyBtn({ label, text, color, onClick }) {
     return (
         <button onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
             all: 'unset', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 5,
-            padding: '5px 12px', borderRadius: 9999, background: color, color: '#fff',
-            fontFamily: KF, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+            padding: '5px 12px', borderRadius: 9999, background: color, color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer',
             boxShadow: hov ? `0 4px 0 ${color}88` : `0 3px 0 ${color}88`,
             transform: hov ? 'scale(1.06) translateY(-1px)' : 'scale(1)', transition: 'all .15s',
         }}>
@@ -751,7 +804,7 @@ function TouchBtn({ label, color, shadow, icon, onClick }) {
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 padding: '10px 22px', borderRadius: 20,
                 border: '3px solid rgba(255,255,255,.6)',
-                background: color, color: '#fff', fontFamily: KF, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                background: color, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer',
                 boxShadow: pressed ? 'none' : `0 5px 0 ${shadow}, 0 8px 20px ${shadow}`,
                 transform: pressed ? 'scale(.92) translateY(4px)' : 'scale(1)', transition: 'all .12s', minWidth: 90,
             }}>
@@ -765,27 +818,92 @@ export function AnimalInfoModal({ animal, onClose, onFeed, isFed, placement = 'c
     const fedText = isFed ? `The ${animal.name} has been fed.` : `The ${animal.name} is hungry.`;
 
     if (preview) {
+        const previewBottom = bottomOffset || 'max(98px, env(safe-area-inset-bottom) + 56px)';
         return (
-            <Modal
-                isOpen={!!animal}
-                onClose={onClose}
-                title={animal.name}
-                placement={placement}
-                showClose={true}
-                showBackdrop={false}
-                bottomOffset={bottomOffset}
-            >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: previewBottom,
+                zIndex: 165,
+                display: 'flex',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                padding: '0 max(12px, env(safe-area-inset-right))',
+            }}>
+                <div style={{
+                    width: 'min(92vw, 360px)',
+                    borderRadius: 18,
+                    background: 'rgba(255,255,255,.96)',
+                    border: '2px solid rgba(255,255,255,.8)',
+                    boxShadow: '0 10px 28px rgba(0,0,0,.22)',
+                    padding: '10px 10px 9px',
+                    pointerEvents: 'auto',
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginBottom: 8,
+                    }}>
+                        <p style={{
+                            margin: 0,
+                            fontSize: 14,
+                            fontWeight: 900,
+                            color: '#f08a3a',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            {animal.name}
+                        </p>
+                        <button
+                            onClick={onClose}
+                            aria-label="Close nearby animal card"
+                            style={{
+                                all: 'unset',
+                                boxSizing: 'border-box',
+                                width: 26,
+                                height: 26,
+                                borderRadius: 10,
+                                background: '#F1F5F9',
+                                border: '1px solid #E2E8F0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: '#6B7280',
+                                flexShrink: 0,
+                            }}
+                        >
+                            <Icons.Close />
+                        </button>
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        <Btn3D onClick={onFeed} color={isFed ? '#95a5a6' : '#00b894'} disabled={isFed} icon={<Icons.Feed />} style={{ justifyContent: 'center', width: '100%' }}>
+                        <Btn3D
+                            onClick={onFeed}
+                            color={isFed ? '#95a5a6' : '#00b894'}
+                            disabled={isFed}
+                            icon={<Icons.Feed />}
+                            size="sm"
+                            style={{ justifyContent: 'center', width: '100%' }}
+                        >
                             {isFed ? 'Fed' : 'Feed'}
                         </Btn3D>
-                        <Btn3D onClick={onView} color="#74b9ff" icon={<Icons.Eye />} style={{ justifyContent: 'center', width: '100%' }}>
+                        <Btn3D
+                            onClick={onView}
+                            color="#74b9ff"
+                            icon={<Icons.Eye />}
+                            size="sm"
+                            style={{ justifyContent: 'center', width: '100%' }}
+                        >
                             View
                         </Btn3D>
                     </div>
                 </div>
-            </Modal>
+            </div>
         );
     }
 
@@ -804,14 +922,14 @@ export function AnimalInfoModal({ animal, onClose, onFeed, isFed, placement = 'c
                         </svg>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontFamily: KF, fontSize: 13, fontWeight: 800, fontStyle: 'italic', color: '#10B981', marginBottom: 6 }}>{animal.species}</p>
-                        <p style={{ fontFamily: KF, fontSize: 13, fontWeight: 600, color: '#4B5563', lineHeight: 1.6 }}>{animal.description}</p>
+                        <p style={{ fontSize: 13, fontWeight: 800, fontStyle: 'italic', color: '#10B981', marginBottom: 6 }}>{animal.species}</p>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: '#4B5563', lineHeight: 1.6 }}>{animal.description}</p>
                     </div>
                 </div>
 
                 <div style={{ background: isFed ? 'rgba(0,184,148,.08)' : 'rgba(255,159,67,.1)', borderRadius: 16, padding: '13px 16px', border: `2.5px solid ${isFed ? 'rgba(0,184,148,.3)' : 'rgba(255,159,67,.4)'}` }}>
-                    <p style={{ fontFamily: KF, fontSize: 12, fontWeight: 900, color: isFed ? '#059669' : '#e17055', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>Feeding Status</p>
-                    <p style={{ fontFamily: KF, fontSize: 13, fontWeight: 600, color: isFed ? '#065F46' : '#92400E', lineHeight: 1.5 }}>{fedText}</p>
+                    <p style={{ fontSize: 12, fontWeight: 900, color: isFed ? '#059669' : '#e17055', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>Feeding Status</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: isFed ? '#065F46' : '#92400E', lineHeight: 1.5 }}>{fedText}</p>
                 </div>
 
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -839,8 +957,7 @@ export function FeedingSuccessNotification({ visible, animalName, onHide }) {
         }}>
             <div className="kids-pop" style={{
                 background: 'linear-gradient(135deg, #00b894, #55efc4)',
-                borderRadius: 9999, padding: '10px 22px', color: '#fff',
-                fontFamily: KF, fontSize: 14, fontWeight: 800,
+                borderRadius: 9999, padding: '10px 22px', color: '#fff', fontSize: 14, fontWeight: 800,
                 boxShadow: '0 6px 0 rgba(0,120,90,.3)', whiteSpace: 'nowrap',
                 border: '3px solid rgba(255,255,255,.5)',
                 display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'auto'
@@ -851,6 +968,170 @@ export function FeedingSuccessNotification({ visible, animalName, onHide }) {
                 You fed the {animalName}!
             </div>
         </div>
+    );
+}
+
+function createCertificateDataUrl({ playerName, dateText, totalAnimals }) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;
+    canvas.height = 1100;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const grad = ctx.createLinearGradient(0, 0, 1600, 1100);
+    grad.addColorStop(0, '#f7fbff');
+    grad.addColorStop(1, '#eef6ff');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1600, 1100);
+
+    ctx.strokeStyle = '#1f5aa6';
+    ctx.lineWidth = 20;
+    ctx.strokeRect(48, 48, 1504, 1004);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(82, 82, 1436, 936);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0f3f76';
+    ctx.font = '700 66px serif';
+    ctx.fillText('Certificate of Completion', 800, 230);
+
+    ctx.fillStyle = '#334155';
+    ctx.font = '500 36px sans-serif';
+    ctx.fillText('This certifies that', 800, 330);
+
+    ctx.fillStyle = '#b45309';
+    ctx.font = '700 72px sans-serif';
+    ctx.fillText(playerName, 800, 430);
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = '500 34px sans-serif';
+    ctx.fillText(`has successfully fed all ${totalAnimals} animals`, 800, 520);
+    ctx.fillText('in the Bulusan Mini Zoo exploration game.', 800, 575);
+
+    ctx.fillStyle = '#334155';
+    ctx.font = '500 30px sans-serif';
+    ctx.fillText(`Date: ${dateText}`, 800, 700);
+
+    ctx.fillStyle = '#0f3f76';
+    ctx.font = '700 34px serif';
+    ctx.fillText('Bulusan Zoo Mini Game', 800, 840);
+
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(510, 915);
+    ctx.lineTo(1090, 915);
+    ctx.stroke();
+    ctx.fillStyle = '#475569';
+    ctx.font = '500 24px sans-serif';
+    ctx.fillText('Official Completion Signature', 800, 955);
+
+    return canvas.toDataURL('image/png');
+}
+
+export function AllAnimalsCelebration({ visible, onClose, onViewCertificate }) {
+    if (!visible) return null;
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 250,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(8,18,34,.56)', backdropFilter: 'blur(4px)',
+            padding: 'max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))',
+        }}>
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                {[...Array(14)].map((_, i) => (
+                    <span
+                        key={i}
+                        className="kids-sparkle"
+                        style={{
+                            position: 'absolute',
+                            left: `${8 + ((i * 7) % 84)}%`,
+                            top: `${10 + ((i * 11) % 72)}%`,
+                            width: 18,
+                            height: 18,
+                            color: i % 2 === 0 ? '#ffd166' : '#7dd3fc',
+                            animationDelay: `${(i % 6) * 0.18}s`,
+                        }}
+                    >
+                        <Icons.Sparkle />
+                    </span>
+                ))}
+            </div>
+
+            <div className="kids-pop" style={{
+                width: 'min(92vw, 560px)',
+                borderRadius: 26,
+                background: 'linear-gradient(180deg,#ffffff 0%,#f9fbff 100%)',
+                border: '3px solid rgba(255,255,255,.8)',
+                boxShadow: '0 16px 46px rgba(0,0,0,.28)',
+                padding: '24px 18px 18px',
+                textAlign: 'center',
+                position: 'relative',
+            }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 900, color: '#f97316', letterSpacing: '.03em' }}>
+                    All Animals Fed!
+                </h3>
+                <p style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#334155', lineHeight: 1.6 }}>
+                    Amazing work, Explorer. You completed every feeding task!
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Btn3D onClick={onViewCertificate} color="#00b894" icon={<Icons.Trophy />} style={{ width: '100%', justifyContent: 'center' }}>
+                        View Certificate
+                    </Btn3D>
+                    <Btn3D onClick={onClose} color="#74b9ff" icon={<Icons.Close />} style={{ width: '100%', justifyContent: 'center' }}>
+                        Close
+                    </Btn3D>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export function CertificateModal({ isOpen, onClose, playerName = 'Explorer', totalAnimals = 11 }) {
+    const dateText = new Date().toLocaleDateString();
+
+    const handleDownload = useCallback(() => {
+        const dataUrl = createCertificateDataUrl({ playerName, dateText, totalAnimals });
+        if (!dataUrl) return;
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `bulusan-zoo-certificate-${Date.now()}.png`;
+        link.click();
+    }, [dateText, playerName, totalAnimals]);
+
+    if (!isOpen) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Completion Certificate" placement="center">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{
+                    borderRadius: 16,
+                    border: '2px solid #cbd5e1',
+                    background: 'linear-gradient(180deg,#f8fbff 0%, #eef4ff 100%)',
+                    padding: '18px 14px',
+                    textAlign: 'center',
+                }}>
+                    <p style={{ margin: 0, fontSize: 12, letterSpacing: '.14em', fontWeight: 800, color: '#1d4ed8' }}>CERTIFICATE OF COMPLETION</p>
+                    <p style={{ margin: '12px 0 4px', fontSize: 13, color: '#334155', fontWeight: 700 }}>Awarded to</p>
+                    <p style={{ margin: '0 0 8px', fontSize: 30, color: '#b45309', fontWeight: 900 }}>{playerName}</p>
+                    <p style={{ margin: '0 0 10px', fontSize: 14, color: '#0f172a', fontWeight: 700, lineHeight: 1.5 }}>
+                        For feeding all {totalAnimals} animals in Bulusan Mini Zoo
+                    </p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#475569', fontWeight: 700 }}>Date: {dateText}</p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Btn3D onClick={handleDownload} color="#00b894" icon={<Icons.Download />} style={{ width: '100%', justifyContent: 'center' }}>
+                        Download PNG
+                    </Btn3D>
+                    <Btn3D onClick={onClose} color="#74b9ff" icon={<Icons.Close />} style={{ width: '100%', justifyContent: 'center' }}>
+                        Close
+                    </Btn3D>
+                </div>
+            </div>
+        </Modal>
     );
 }
 
@@ -867,8 +1148,8 @@ export function QuitModal({ isOpen, onConfirm, onCancel }) {
                         <path d="M27 40 Q32 36 37 40" stroke="#c0392b" strokeWidth="2" fill="none" strokeLinecap="round" />
                     </svg>
                 </div>
-                <h3 style={{ fontFamily: KF_DISPLAY, fontSize: 26, fontWeight: 400, margin: '0 0 8px', color: '#e17055' }}>Leaving So Soon?</h3>
-                <p style={{ fontFamily: KF, fontSize: 14, fontWeight: 700, color: '#6B7280', marginBottom: 22, lineHeight: 1.65 }}>
+                <h3 style={{ fontSize: 26, fontWeight: 400, margin: '0 0 8px', color: '#e17055' }}>Leaving So Soon?</h3>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#6B7280', marginBottom: 22, lineHeight: 1.65 }}>
                     The animals will miss you! Are you sure you want to leave?
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -899,7 +1180,6 @@ export function WelcomePopup({ visible, message }) {
                 borderRadius: 999,
                 border: '1px solid rgba(255,255,255,.25)',
                 padding: '10px 18px',
-                fontFamily: KF,
                 fontSize: 13,
                 fontWeight: 700,
                 letterSpacing: '.03em',
@@ -984,7 +1264,7 @@ export function JumpButton({ jumpRef }) {
                 transition: 'all .1s', zIndex: 110, touchAction: 'none', gap: 2,
             }}>
             <Icons.ArrowUp />
-            <span style={{ fontFamily: KF, fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
+            <span style={{ fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
         </button>
     );
 }
@@ -1142,8 +1422,7 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
                                 position: 'absolute', top: -5, right: -5,
                                 width: 18, height: 18, borderRadius: '50%',
                                 background: '#ff6b9d', border: '2px solid rgba(20,20,30,.9)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontFamily: KF, fontSize: 9, fontWeight: 900, color: '#fff',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 900, color: '#fff',
                             }}>
                                 {photos.length > 9 ? '9+' : photos.length}
                             </div>
@@ -1189,7 +1468,6 @@ export function CameraSystem({ gameStarted, containerRef, nearbyAnimalName, onRe
                         border: '1px solid rgba(255,255,255,.25)',
                         padding: '7px 12px',
                         boxShadow: '0 10px 24px rgba(0,0,0,.2)',
-                        fontFamily: KF,
                         fontSize: 12,
                         fontWeight: 800,
                         letterSpacing: '.03em'
@@ -1258,8 +1536,8 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
                                 <circle cx="12" cy="13" r="4" />
                             </svg>
                         </div>
-                        <p style={{ fontFamily: KF, fontSize: 14, fontWeight: 700, color: '#9CA3AF' }}>No photos yet</p>
-                        <p style={{ fontFamily: KF, fontSize: 12, fontWeight: 600, color: '#D1D5DB', marginTop: 4 }}>Press C or tap the camera button to take a photo</p>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: '#9CA3AF' }}>No photos yet</p>
+                        <p style={{ fontSize: 12, fontWeight: 600, color: '#D1D5DB', marginTop: 4 }}>Press C or tap the camera button to take a photo</p>
                     </div>
                 ) : (
                     <>
@@ -1269,12 +1547,12 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
                                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent,rgba(0,0,0,.7))', padding: '24px 12px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                     <div>
                                         {selectedPhoto.animalName && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: KF, fontSize: 12, fontWeight: 800, color: '#ffd32a' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 800, color: '#ffd32a' }}>
                                                 <Icons.Pin />
                                                 Near {selectedPhoto.animalName}
                                             </div>
                                         )}
-                                        <p style={{ fontFamily: KF, fontSize: 11, color: 'rgba(255,255,255,.7)', margin: '2px 0 0' }}>
+                                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', margin: '2px 0 0' }}>
                                             {selectedPhoto.date} · {selectedPhoto.timestamp}
                                         </p>
                                     </div>
@@ -1295,7 +1573,7 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
                                 <div key={photo.id} onClick={() => onSelectPhoto(selectedPhoto?.id === photo.id ? null : photo)} style={{ borderRadius: 12, overflow: 'hidden', cursor: 'pointer', border: selectedPhoto?.id === photo.id ? '3px solid #ffd32a' : '2.5px solid #E5E7EB', transition: 'all .15s', transform: selectedPhoto?.id === photo.id ? 'scale(0.96)' : 'scale(1)', position: 'relative' }}>
                                     <img src={photo.dataUrl} alt="Zoo photo" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', display: 'block' }} />
                                     {photo.animalName && (
-                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent,rgba(0,0,0,.6))', padding: '12px 4px 3px', fontFamily: KF, fontSize: 8, fontWeight: 800, color: '#fff', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent,rgba(0,0,0,.6))', padding: '12px 4px 3px', fontSize: 8, fontWeight: 800, color: '#fff', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {photo.animalName}
                                         </div>
                                     )}
@@ -1303,7 +1581,7 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
                             ))}
                         </div>
 
-                        <p style={{ fontFamily: KF, fontSize: 11, color: '#9CA3AF', textAlign: 'center', fontWeight: 700 }}>
+                        <p style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', fontWeight: 700 }}>
                             {photos.length} photo{photos.length !== 1 ? 's' : ''} · Tap to select · Tap again to deselect
                         </p>
                     </>
@@ -1313,19 +1591,38 @@ function PhotoGallery({ photos, onClose, onDelete, onDownload, selectedPhoto, on
     );
 }
 
-export function BottomHotbar({ gameStarted, completedTasks, totalTasks }) {
+export function BottomHotbar({ gameStarted, completedTasks, totalTasks, onMenuClick, onTasksClick }) {
     const isTouch = useIsTouch();
     if (!gameStarted || isTouch) return null;
 
     const allDone = completedTasks === totalTasks && totalTasks > 0;
 
     const slots = [
-        { id: 'tasks', icon: allDone ? <Icons.Trophy /> : <Icons.Tasks />, label: `${completedTasks}/${totalTasks}`, desc: 'Tasks', onClick: null, badge: null, bg: allDone ? 'linear-gradient(145deg,#ffd32a,#f9ca24)' : null, active: allDone },
+        {
+            id: 'menu',
+            icon: <Icons.Menu />,
+            label: 'MENU',
+            desc: 'Open settings menu',
+            onClick: onMenuClick,
+            badge: null,
+            bg: 'linear-gradient(145deg,#74b9ff,#6c5ce7)',
+            active: false
+        },
+        {
+            id: 'tasks',
+            icon: allDone ? <Icons.Trophy /> : <Icons.Tasks />,
+            label: `${completedTasks}/${totalTasks}`,
+            desc: 'Open tasks',
+            onClick: onTasksClick,
+            badge: null,
+            bg: allDone ? 'linear-gradient(145deg,#ffd32a,#f9ca24)' : 'linear-gradient(145deg,#55efc4,#00b894)',
+            active: allDone
+        },
     ];
 
     return (
         <div style={{ position: 'fixed', bottom: 16, left: 0, right: 0, zIndex: 22, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-            <div style={{ display: 'flex', gap: 6, background: 'rgba(14,14,22,.78)', backdropFilter: 'blur(12px)', borderRadius: 20, padding: '8px 10px', border: '2px solid rgba(255,255,255,.12)', boxShadow: '0 8px 32px rgba(0,0,0,.35)', pointerEvents: 'auto' }}>
+            <div style={{ display: 'flex', gap: 8, background: 'rgba(14,14,22,.78)', backdropFilter: 'blur(12px)', borderRadius: 20, padding: '8px 10px', border: '2px solid rgba(255,255,255,.12)', boxShadow: '0 8px 32px rgba(0,0,0,.35)', pointerEvents: 'auto' }}>
                 {slots.map(slot => <HotbarSlot key={slot.id} slot={slot} />)}
             </div>
         </div>
@@ -1341,11 +1638,11 @@ function HotbarSlot({ slot }) {
             onMouseEnter={() => setHov(true)} onMouseLeave={() => { setHov(false); setPressed(false); }}
             onMouseDown={() => slot.onClick && setPressed(true)} onMouseUp={() => setPressed(false)}
             title={slot.desc}
-            style={{ width: 52, height: 56, borderRadius: 14, background: active ? (slot.bg || 'rgba(255,255,255,.15)') : slot.active ? (slot.bg || 'rgba(255,255,255,.1)') : 'rgba(255,255,255,.06)', border: `2px solid rgba(255,255,255,${active ? '.4' : '.1'})`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, cursor: slot.onClick ? 'pointer' : 'default', transition: 'all .15s', transform: pressed ? 'translateY(2px) scale(0.95)' : active ? 'translateY(-3px)' : 'translateY(0)', boxShadow: active ? '0 6px 16px rgba(0,0,0,.3)' : 'none', position: 'relative' }}>
+            style={{ width: 58, height: 58, borderRadius: 15, background: active ? (slot.bg || 'rgba(255,255,255,.15)') : slot.active ? (slot.bg || 'rgba(255,255,255,.1)') : 'rgba(255,255,255,.06)', border: `2px solid rgba(255,255,255,${active ? '.4' : '.1'})`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: slot.onClick ? 'pointer' : 'default', transition: 'all .15s', transform: pressed ? 'translateY(2px) scale(0.95)' : active ? 'translateY(-3px)' : 'translateY(0)', boxShadow: active ? '0 6px 16px rgba(0,0,0,.3)' : 'none', position: 'relative' }}>
             <span style={{ color: active || slot.active ? '#fff' : 'rgba(255,255,255,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .15s' }}>{slot.icon}</span>
-            <span style={{ fontFamily: KF, fontSize: 8, fontWeight: 800, color: active || slot.active ? '#fff' : 'rgba(255,255,255,.35)', letterSpacing: '.04em', transition: 'color .15s' }}>{slot.label}</span>
+            <span style={{ fontSize: 9, fontWeight: 900, color: active || slot.active ? '#fff' : 'rgba(255,255,255,.35)', letterSpacing: '.06em', transition: 'color .15s' }}>{slot.label}</span>
             {slot.badge !== null && slot.badge !== undefined && (
-                <div style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: '50%', background: '#ff6b9d', border: '2px solid rgba(14,14,22,.78)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: KF, fontSize: 9, fontWeight: 900, color: '#fff' }}>
+                <div style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: '50%', background: '#ff6b9d', border: '2px solid rgba(14,14,22,.78)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 900, color: '#fff' }}>
                     {slot.badge > 9 ? '9+' : slot.badge}
                 </div>
             )}
@@ -1367,38 +1664,40 @@ function SidePanel({ isOpen, onClose, side, title, children, accent = '#ff9f43' 
         <>
             <div onClick={onClose} style={{
                 position: 'fixed', inset: 0,
-                background: 'rgba(0,0,0,.4)', backdropFilter: 'blur(4px)',
+                background: 'rgba(3,12,22,.46)', backdropFilter: 'blur(6px)',
                 zIndex: 190, opacity: isOpen ? 1 : 0,
                 pointerEvents: isOpen ? 'auto' : 'none', transition: 'opacity .25s',
             }} />
             <div data-ui-panel="true" style={{
                 position: 'fixed', top: 0, [side]: 0, height: '100dvh',
-                width: 'min(300px, 90vw)',
-                background: '#fff', zIndex: 195,
+                width: 'min(360px, 92vw)',
+                background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)', zIndex: 195,
                 transform: tx, transition: 'transform .32s cubic-bezier(.16,1,.3,1)',
                 display: 'flex', flexDirection: 'column',
                 borderRadius: side === 'left' ? '0 28px 28px 0' : '28px 0 0 28px',
                 overflow: 'hidden',
-                boxShadow: side === 'left' ? '6px 0 48px rgba(0,0,0,.14)' : '-6px 0 48px rgba(0,0,0,.14)',
+                border: side === 'left' ? '0 1px 0 rgba(16,24,40,.08)' : '1px 0 0 rgba(16,24,40,.08)',
+                boxShadow: side === 'left' ? '6px 0 48px rgba(0,0,0,.18)' : '-6px 0 48px rgba(0,0,0,.18)',
             }}>
-                <div style={{ height: 5, background: `linear-gradient(90deg, ${accent}, ${accent}88)`, flexShrink: 0 }} />
+                <div style={{ height: 6, background: `linear-gradient(90deg, ${accent}, ${accent}88)`, flexShrink: 0 }} />
                 <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '16px 18px', borderBottom: '2px dashed #F3F4F6', flexShrink: 0,
+                    padding: '16px 16px', borderBottom: '1px solid #E5EDF7', flexShrink: 0,
+                    background: 'linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(248,250,255,.9) 100%)',
                 }}>
-                    <span style={{ fontFamily: KF_DISPLAY, fontSize: 20, color: '#374151' }}>{title}</span>
+                    <span style={{ fontSize: 19, fontWeight: 900, letterSpacing: '.02em', color: '#27364a' }}>{title}</span>
                     <button onClick={onClose} style={{
                         all: 'unset', boxSizing: 'border-box',
-                        width: 34, height: 34, borderRadius: 12, background: '#F3F4F6',
+                        width: 34, height: 34, borderRadius: 12, background: '#EEF2F8',
                         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#6B7280', boxShadow: '0 2px 0 #d1d5db', transition: 'background .15s',
+                        color: '#5b6474', boxShadow: '0 2px 0 #d4dbe7', transition: 'background .15s',
                     }}
                         onMouseEnter={e => e.currentTarget.style.background = '#E5E7EB'}
-                        onMouseLeave={e => e.currentTarget.style.background = '#F3F4F6'}>
+                        onMouseLeave={e => e.currentTarget.style.background = '#EEF2F8'}>
                         <Icons.Close />
                     </button>
                 </div>
-                <div data-ui-scrollable="true" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}>{children}</div>
+                <div data-ui-scrollable="true" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 14, WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}>{children}</div>
             </div>
         </>
     );
@@ -1439,12 +1738,13 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
                 transition: 'top .28s cubic-bezier(.16,1,.3,1), transform .28s cubic-bezier(.16,1,.3,1), border-radius .28s cubic-bezier(.16,1,.3,1), max-height .28s cubic-bezier(.16,1,.3,1)',
                 background: '#fff', borderRadius: isBottom ? 24 : 28,
                 boxShadow: '0 24px 80px rgba(0,0,0,.25), 0 8px 24px rgba(0,0,0,.15)',
-                width: 'min(100%, 520px)', maxWidth: isBottom ? 560 : 460,
+                width: isBottom ? 'min(calc(100vw - 20px), 560px)' : 'min(calc(100vw - 22px), 480px)',
+                maxWidth: isBottom ? 560 : 480,
                 maxHeight: isBottom
-                    ? 'min(68dvh, 560px)'
-                    : 'calc(100dvh - max(32px, env(safe-area-inset-top) + env(safe-area-inset-bottom)))',
+                    ? 'min(64dvh, 520px)'
+                    : 'min(calc(100dvh - 22px), 700px)',
                 display: 'flex', flexDirection: 'column', overflowY: 'auto',
-                padding: isBottom ? '22px 18px 18px' : '26px 22px 22px',
+                padding: isBottom ? '18px 14px 14px' : '20px 16px 16px',
                 WebkitOverflowScrolling: 'touch',
                 touchAction: 'pan-y',
                 overscrollBehavior: 'contain',
@@ -1470,8 +1770,7 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
                     </button>
                 )}
                 {title && (
-                    <h3 style={{
-                        fontFamily: KF_DISPLAY, fontSize: 22, margin: '0 0 16px',
+                    <h3 style={{ fontSize: 20, margin: '0 0 14px',
                         background: 'linear-gradient(135deg, #ff9f43, #ff6b9d)',
                         WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                         paddingRight: showClose ? 36 : 0,
@@ -1488,7 +1787,7 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
 function Section({ label, children }) {
     return (
         <div>
-            <p style={{ fontFamily: KF, fontSize: 10, fontWeight: 900, letterSpacing: '.1em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 10 }}>{label}</p>
+            <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: '.1em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 10 }}>{label}</p>
             {children}
         </div>
     );
@@ -1504,7 +1803,7 @@ export function InteractPrompt({ visible }) {
     return (
         <div style={{ position: 'fixed', bottom: 44, left: 0, right: 0, zIndex: 20, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
             <div style={{ background: 'rgba(255,255,255,.95)', borderRadius: 9999, padding: '8px 18px', boxShadow: '0 4px 16px rgba(0,0,0,.1)', border: '2.5px solid #ffd32a' }}>
-                <span style={{ fontFamily: KF, fontSize: 12, fontWeight: 800, color: '#374151' }}>Press E to interact</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#374151' }}>Press E to interact</span>
             </div>
         </div>
     );

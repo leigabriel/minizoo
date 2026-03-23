@@ -25,7 +25,9 @@ import {
     JumpButton,
     BottomHotbar,
     WelcomePopup,
-    BULUSAN_ZOO_URL
+    AllAnimalsCelebration,
+    CertificateModal,
+    playGameButtonSfx
 } from './ui/GameUI.jsx';
 
 import {
@@ -40,6 +42,14 @@ const PLAYER_HEIGHT = 4.5;
 const STATUE_CENTER = { x: 0, z: 0 };
 const PLAYER_START_OFFSET = { x: 14, z: 10 };
 const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
+const STATUE_MESSAGES = [
+    'HI VISITOR, HOWS YOUR EXPLORATION?',
+    'WELCOME TO BULUSAN MINI ZOO!',
+    'TAKE A MOMENT AND ENJOY THE VIEW!',
+    'THE ANIMALS LOOK HAPPY TODAY!',
+    'KEEP EXPLORING, ADVENTURER!',
+    'DID YOU FEED YOUR FAVORITE ANIMAL YET?'
+];
 
 function isMusicEnabled() {
     try {
@@ -47,6 +57,17 @@ function isMusicEnabled() {
         if (!raw) return true;
         const parsed = JSON.parse(raw);
         return parsed?.musicEnabled !== false;
+    } catch {
+        return true;
+    }
+}
+
+function isSoundEnabled() {
+    try {
+        const raw = localStorage.getItem('minizoo_settings');
+        if (!raw) return true;
+        const parsed = JSON.parse(raw);
+        return parsed?.soundEnabled !== false;
     } catch {
         return true;
     }
@@ -136,6 +157,10 @@ function MiniZooGame() {
 
     const welcomeTimerRef = useRef(null);
     const ambienceRef = useRef(null);
+    const statueMessageTimerRef = useRef(null);
+    const statueMessageHideRef = useRef(null);
+    const isNearStatueRef = useRef(false);
+    const soundEnabledRef = useRef(isSoundEnabled());
 
     const [isTouchDevice, setIsTouchDevice] = useState(() => {
         if (typeof window === 'undefined') return false;
@@ -153,6 +178,10 @@ function MiniZooGame() {
     const [tasksOpen, setTasksOpen] = useState(false);
     const [showQuitModal, setShowQuitModal] = useState(false);
     const [showWelcome, setShowWelcome] = useState(false);
+    const [showAllFedCelebration, setShowAllFedCelebration] = useState(false);
+    const [showCertificate, setShowCertificate] = useState(false);
+    const [showStatueGreeting, setShowStatueGreeting] = useState(false);
+    const [statueGreetingMessage, setStatueGreetingMessage] = useState(STATUE_MESSAGES[0]);
 
     const [nearbyAnimal, setNearbyAnimal] = useState(null);
     const [selectedAnimal, setSelectedAnimal] = useState(null);
@@ -161,6 +190,7 @@ function MiniZooGame() {
     const [tasks, setTasks] = useState(getTasks());
 
     const [feedingSuccess, setFeedingSuccess] = useState({ visible: false, animalName: '' });
+    const allFedCelebratedRef = useRef(false);
 
     // Added obstacles array to state to hold tree/rock/bush positions
     const gameStateRef = useRef({
@@ -233,6 +263,43 @@ function MiniZooGame() {
         }
     }, []);
 
+    const clearStatueMessageTimers = useCallback(() => {
+        if (statueMessageTimerRef.current) {
+            clearTimeout(statueMessageTimerRef.current);
+            statueMessageTimerRef.current = null;
+        }
+        if (statueMessageHideRef.current) {
+            clearTimeout(statueMessageHideRef.current);
+            statueMessageHideRef.current = null;
+        }
+    }, []);
+
+    const showRandomStatueMessage = useCallback(() => {
+        const message = STATUE_MESSAGES[Math.floor(Math.random() * STATUE_MESSAGES.length)];
+        setStatueGreetingMessage(message);
+        setShowStatueGreeting(true);
+        if (statueMessageHideRef.current) {
+            clearTimeout(statueMessageHideRef.current);
+        }
+        statueMessageHideRef.current = setTimeout(() => {
+            setShowStatueGreeting(false);
+            statueMessageHideRef.current = null;
+        }, 2600);
+    }, []);
+
+    const scheduleNextStatueMessage = useCallback(() => {
+        if (!isNearStatueRef.current) return;
+        if (statueMessageTimerRef.current) {
+            clearTimeout(statueMessageTimerRef.current);
+        }
+        const delay = 4500 + Math.random() * 6500;
+        statueMessageTimerRef.current = setTimeout(() => {
+            if (!isNearStatueRef.current) return;
+            showRandomStatueMessage();
+            scheduleNextStatueMessage();
+        }, delay);
+    }, [showRandomStatueMessage]);
+
     const initGame = useCallback(async () => {
         const state = gameStateRef.current;
         if (state.initialized) return;
@@ -294,6 +361,8 @@ function MiniZooGame() {
 
             let lastTime = performance.now();
             let nearbyTimer = 0;
+            let ambientSoundTimer = 0;
+            let statueCheckTimer = 0;
             const nearbyInterval = isMobile ? 0.3 : 0.2;
 
             const animate = () => {
@@ -320,6 +389,34 @@ function MiniZooGame() {
                     c.position.x += 0.02 * dt * 60;
                     if (c.position.x > 400) c.position.x = -400;
                 });
+
+                ambientSoundTimer += dt;
+                if (ambientSoundTimer >= 0.35) {
+                    ambientSoundTimer = 0;
+                    const nowSeconds = now * 0.001;
+                    const soundEnabled = soundEnabledRef.current;
+                    state.animals.forEach((animal) => {
+                        animal.maybePlayAmbientSound?.(nowSeconds, camera.position, soundEnabled);
+                    });
+                }
+
+                statueCheckTimer += dt;
+                if (statueCheckTimer >= 0.2) {
+                    statueCheckTimer = 0;
+                    const dx = camera.position.x - STATUE_CENTER.x;
+                    const dz = camera.position.z - STATUE_CENTER.z;
+                    const nearStatue = (dx * dx + dz * dz) <= (26 * 26);
+
+                    if (nearStatue && !isNearStatueRef.current) {
+                        isNearStatueRef.current = true;
+                        showRandomStatueMessage();
+                        scheduleNextStatueMessage();
+                    } else if (!nearStatue && isNearStatueRef.current) {
+                        isNearStatueRef.current = false;
+                        clearStatueMessageTimers();
+                        setShowStatueGreeting(false);
+                    }
+                }
 
                 nearbyTimer += dt;
                 if (nearbyTimer > nearbyInterval) {
@@ -350,6 +447,7 @@ function MiniZooGame() {
                 cleanupKeyboard();
                 cleanupTouch();
                 cleanupMouse();
+                clearStatueMessageTimers();
                 state.animals.forEach(a => a.dispose?.());
                 if (renderer) {
                     renderer.dispose();
@@ -366,7 +464,7 @@ function MiniZooGame() {
             console.error('Game init failed:', err);
             setIsLoading(false);
         }
-    }, [checkNearbyAnimals]);
+    }, [checkNearbyAnimals, clearStatueMessageTimers, scheduleNextStatueMessage, showRandomStatueMessage]);
 
     const handleStartGame = useCallback(() => {
         setShowMenu(false);
@@ -386,8 +484,17 @@ function MiniZooGame() {
     const handleQuitRequest = useCallback(() => { setSettingsOpen(false); setShowQuitModal(true); }, []);
     const handleConfirmQuit = useCallback(() => {
         setShowQuitModal(false);
-        stopAmbience(false);
-        window.location.href = BULUSAN_ZOO_URL;
+        stopAmbience(true);
+        setSettingsOpen(false);
+        setTasksOpen(false);
+        setSelectedAnimal(null);
+        setNearbyAnimal(null);
+        setIsCompactAnimalPopupDismissed(false);
+        setShowWelcome(false);
+        setShowAllFedCelebration(false);
+        setShowCertificate(false);
+        setGameStarted(false);
+        setShowMenu(true);
     }, [stopAmbience]);
     const handleCancelQuit = useCallback(() => setShowQuitModal(false), []);
 
@@ -402,6 +509,9 @@ function MiniZooGame() {
     const handleFeedAnimal = useCallback(() => {
         if (!nearbyAnimal) return;
         const info = nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config;
+        if (isSoundEnabled()) {
+            nearbyAnimal.playSound?.();
+        }
         feedAnimal(info.name);
         setTasks(getTasks());
         setFeedingSuccess({ visible: true, animalName: info.name });
@@ -409,6 +519,14 @@ function MiniZooGame() {
 
     const handleFeedFromModal = useCallback(() => {
         if (!selectedAnimal) return;
+        if (isSoundEnabled()) {
+            const state = gameStateRef.current;
+            const match = state.animals.find(a => {
+                const info = a.getInfo ? a.getInfo() : a.config;
+                return info?.name === selectedAnimal.name;
+            });
+            match?.playSound?.();
+        }
         feedAnimal(selectedAnimal.name);
         setTasks(getTasks());
         setFeedingSuccess({ visible: true, animalName: selectedAnimal.name });
@@ -457,6 +575,9 @@ function MiniZooGame() {
             }
             if (key === 'f' && nearbyAnimal && !selectedAnimal && gameStarted) {
                 const info = nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config;
+                if (isSoundEnabled()) {
+                    nearbyAnimal.playSound?.();
+                }
                 feedAnimal(info.name);
                 setTasks(getTasks());
                 setFeedingSuccess({ visible: true, animalName: info.name });
@@ -479,12 +600,37 @@ function MiniZooGame() {
     }, [nearbyAnimal, selectedAnimal, gameStarted, settingsOpen, tasksOpen, animalModalPlacement]);
 
     useEffect(() => {
+        const syncSoundEnabled = () => {
+            soundEnabledRef.current = isSoundEnabled();
+        };
+
+        syncSoundEnabled();
+
+        const onStorage = (e) => {
+            if (!e || e.key === 'minizoo_settings' || e.key === null) {
+                syncSoundEnabled();
+            }
+        };
+
+        window.addEventListener('storage', onStorage);
+        window.addEventListener(SETTINGS_CHANGE_EVENT, syncSoundEnabled);
+
+        return () => {
+            window.removeEventListener('storage', onStorage);
+            window.removeEventListener(SETTINGS_CHANGE_EVENT, syncSoundEnabled);
+        };
+    }, []);
+
+    useEffect(() => {
         let mounted = true;
         const state = gameStateRef.current;
         const t = setTimeout(() => { if (mounted && containerRef.current) initGame(); }, 100);
         return () => {
             mounted = false;
             clearTimeout(t);
+            clearStatueMessageTimers();
+            isNearStatueRef.current = false;
+            setShowStatueGreeting(false);
             if (welcomeTimerRef.current) {
                 clearTimeout(welcomeTimerRef.current);
                 welcomeTimerRef.current = null;
@@ -493,7 +639,7 @@ function MiniZooGame() {
             ambienceRef.current = null;
             state.cleanup?.();
         };
-    }, [initGame, stopAmbience]);
+    }, [clearStatueMessageTimers, initGame, stopAmbience]);
 
     useEffect(() => {
         if (!gameStarted) return;
@@ -538,15 +684,46 @@ function MiniZooGame() {
         };
     }, [gameStarted, playAmbience, stopAmbience]);
 
+    const completedCount = getCompletedTasksCount();
+    const totalCount = getTotalTasks();
+
+    useEffect(() => {
+        if (!gameStarted) {
+            allFedCelebratedRef.current = false;
+            return;
+        }
+
+        if (totalCount <= 0) return;
+
+        const allFedNow = completedCount === totalCount;
+        if (!allFedNow || allFedCelebratedRef.current) return;
+
+        allFedCelebratedRef.current = true;
+        setShowAllFedCelebration(true);
+    }, [completedCount, gameStarted, totalCount]);
+
+    useEffect(() => {
+        const onDocClick = (e) => {
+            const target = e.target;
+            if (!(target instanceof Element)) return;
+            if (!target.closest('button, [data-ui-button="true"]')) return;
+            if (target.closest('[data-sfx-self="true"]')) return;
+            playGameButtonSfx('tap');
+        };
+
+        document.addEventListener('click', onDocClick, true);
+        return () => {
+            document.removeEventListener('click', onDocClick, true);
+        };
+    }, []);
+
     const nearbyAnimalInfo = nearbyAnimal ? (nearbyAnimal.getInfo ? nearbyAnimal.getInfo() : nearbyAnimal.config) : null;
     const compactAnimal = (!isCompactAnimalPopupDismissed && animalModalPlacement === 'bottom') ? nearbyAnimalInfo : null;
     const modalAnimal = animalModalPlacement === 'center' ? selectedAnimal : compactAnimal;
     const isModalAnimalFed = modalAnimal ? isAnimalFed(modalAnimal.name) : false;
-    const completedCount = getCompletedTasksCount();
-    const totalCount = getTotalTasks();
 
     return (
-        <div className="relative w-full h-screen overflow-hidden"
+        <div className="relative w-full h-dvh overflow-hidden"
             style={{ touchAction: 'manipulation', background: 'linear-gradient(to bottom, #7dd3fc, #bae6fd)' }}>
             <div ref={containerRef} className="absolute inset-0" />
             {isLoading && <LoadingScreen progress={loadProgress} />}
@@ -554,6 +731,7 @@ function MiniZooGame() {
             {gameStarted && (
                 <>
                     <WelcomePopup visible={showWelcome} message="welcome to zoo, enjoy" />
+                    <WelcomePopup visible={showStatueGreeting} message={statueGreetingMessage} />
                     <GameHUD
                         onMenuClick={handleMenuClick}
                         onTasksClick={handleTasksClick}
@@ -566,6 +744,8 @@ function MiniZooGame() {
                         gameStarted={gameStarted}
                         completedTasks={completedCount}
                         totalTasks={totalCount}
+                        onMenuClick={handleMenuClick}
+                        onTasksClick={handleTasksClick}
                     />
                     <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} onQuit={handleQuitRequest} />
                     <TaskPanel isOpen={tasksOpen} onClose={() => setTasksOpen(false)} tasks={tasks} onTaskClick={() => setTasksOpen(false)} />
@@ -583,6 +763,20 @@ function MiniZooGame() {
                 </>
             )}
             <QuitModal isOpen={showQuitModal} onConfirm={handleConfirmQuit} onCancel={handleCancelQuit} />
+            <AllAnimalsCelebration
+                visible={showAllFedCelebration}
+                onClose={() => setShowAllFedCelebration(false)}
+                onViewCertificate={() => {
+                    setShowAllFedCelebration(false);
+                    setShowCertificate(true);
+                }}
+            />
+            <CertificateModal
+                isOpen={showCertificate}
+                onClose={() => setShowCertificate(false)}
+                playerName="Explorer"
+                totalAnimals={totalCount}
+            />
         </div>
     );
 }

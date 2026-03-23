@@ -69,7 +69,7 @@ export function createTerrain(scene) {
         })
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
+    ground.receiveShadow = false;
     scene.add(ground);
 
     return ground;
@@ -93,8 +93,8 @@ async function loadOBJModel(name, basePath, modelType = 'default') {
             objLoader.load(`${name}.obj`, (object) => {
                 object.traverse((child) => {
                     if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
+                        child.castShadow = false;
+                        child.receiveShadow = false;
 
                         if (child.material) {
                             const mats = Array.isArray(child.material) ? child.material : [child.material];

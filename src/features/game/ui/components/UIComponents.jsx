@@ -1,7 +1,6 @@
 import React from 'react';
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; }
 
@@ -28,7 +27,6 @@ const styles = `
     --radius-lg: 16px;
     --radius-xl: 24px;
     --radius-full: 9999px;
-    font-family: 'Nunito', 'Fredoka One', sans-serif;
     color: var(--ink);
   }
 
@@ -72,7 +70,7 @@ export function Button({
 }) {
     const base = {
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        gap: '7px', fontFamily: 'inherit', fontWeight: 600, letterSpacing: '-.01em',
+        gap: '7px', fontWeight: 600, letterSpacing: '-.01em',
         border: 'none', cursor: disabled || loading ? 'not-allowed' : 'pointer',
         outline: 'none', transition: 'all .18s cubic-bezier(.16,1,.3,1)',
         userSelect: 'none', position: 'relative', overflow: 'hidden',
@@ -183,7 +181,7 @@ export function IconButton({
                 style={{
                     width: sz, height: sz, borderRadius: '50%', border: 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', fontFamily: 'inherit',
+                    cursor: 'pointer',
                     transition: 'all .18s cubic-bezier(.16,1,.3,1)',
                     transform: hovered ? 'scale(1.08)' : 'scale(1)',
                     ...variants[variant], ...styleProp,
@@ -507,8 +505,7 @@ export function Badge({ children, variant = 'default' }) {
         <span style={{
             display: 'inline-flex', alignItems: 'center',
             padding: '3px 10px', borderRadius: 'var(--radius-full)',
-            fontSize: 11, fontWeight: 700, letterSpacing: '.02em',
-            fontFamily: 'DM Mono, monospace',
+            fontSize: 11, fontWeight: 700, letterSpacing: '.02em', fontFamily: 'monospace',
             ...variants[variant],
         }}>
             {children}
@@ -545,7 +542,7 @@ export function Input({ label, placeholder, value, onChange, type = 'text', pref
                     onBlur={() => setFocused(false)}
                     style={{
                         flex: 1, border: 'none', outline: 'none', padding: '10px 12px',
-                        fontSize: 14, fontFamily: 'inherit', color: 'var(--ink)',
+                        fontSize: 14, color: 'var(--ink)',
                         background: 'transparent',
                     }}
                 />
@@ -588,8 +585,7 @@ export default function Demo() {
         <div style={{ marginBottom: 8, marginTop: 24 }}>
             <span style={{
                 fontSize: 10, fontWeight: 800, letterSpacing: '.12em',
-                textTransform: 'uppercase', color: 'var(--muted)',
-                fontFamily: 'DM Mono, monospace',
+                textTransform: 'uppercase', color: 'var(--muted)', fontFamily: 'monospace',
             }}>
                 {title}
             </span>
@@ -597,7 +593,7 @@ export default function Demo() {
     );
 
     return (
-        <div style={{ minHeight: '100dvh', background: '#F0EEEb', fontFamily: 'DM Sans, sans-serif' }}>
+        <div style={{ minHeight: '100dvh', background: '#F0EEEb', fontFamily: 'sans-serif' }}>
             <InjectStyles />
 
             <div style={{

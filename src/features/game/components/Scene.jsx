@@ -34,7 +34,7 @@ export function createRenderer(container) {
     renderer.setPixelRatio(pixelRatio);
 
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = isMobile ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.BasicShadowMap;
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0; // Restored to default balanced exposure
@@ -57,7 +57,7 @@ export function createLighting(scene) {
     sun.position.set(100, 150, 80);
     sun.castShadow = true;
 
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(512, 512);
     sun.shadow.camera.left = -250;
     sun.shadow.camera.right = 250;
     sun.shadow.camera.top = 250;
