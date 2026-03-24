@@ -35,7 +35,8 @@ import {
     feedAnimal,
     isAnimalFed,
     getCompletedTasksCount,
-    getTotalTasks
+    getTotalTasks,
+    resetAllFeedingTasks
 } from './utils/storage.js';
 
 const PLAYER_HEIGHT = 4.5;
@@ -481,6 +482,16 @@ function MiniZooGame() {
     }, [playAmbience]);
     const handleMenuClick = useCallback(() => setSettingsOpen(true), []);
     const handleTasksClick = useCallback(() => setTasksOpen(true), []);
+    const handleResetTasks = useCallback(() => {
+        const confirmed = window.confirm('Restart all feeding tasks? This will clear current task progress.');
+        if (!confirmed) return;
+        resetAllFeedingTasks();
+        setTasks(getTasks());
+        allFedCelebratedRef.current = false;
+        setShowAllFedCelebration(false);
+        setShowCertificate(false);
+        setFeedingSuccess({ visible: false, animalName: '' });
+    }, []);
     const handleQuitRequest = useCallback(() => { setSettingsOpen(false); setShowQuitModal(true); }, []);
     const handleConfirmQuit = useCallback(() => {
         setShowQuitModal(false);
@@ -699,6 +710,7 @@ function MiniZooGame() {
         if (!allFedNow || allFedCelebratedRef.current) return;
 
         allFedCelebratedRef.current = true;
+        playGameButtonSfx('task-complete');
         setShowAllFedCelebration(true);
     }, [completedCount, gameStarted, totalCount]);
 
@@ -735,6 +747,7 @@ function MiniZooGame() {
                     <GameHUD
                         onMenuClick={handleMenuClick}
                         onTasksClick={handleTasksClick}
+                        onResetTasks={handleResetTasks}
                         completedTasks={completedCount}
                         totalTasks={totalCount}
                     />

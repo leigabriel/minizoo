@@ -124,6 +124,11 @@ export function resetDailyFeeding() {
     return status;
 }
 
+export function resetAllFeedingTasks() {
+    localStorage.removeItem(STORAGE_KEYS.FEEDING_STATUS);
+    return {};
+}
+
 /**
  * Get all tasks with completion status
  */

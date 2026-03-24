@@ -4,7 +4,24 @@ const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'https://bulusan
 const HUD_EDGE = 14;
 const SETTINGS_KEY = 'minizoo_settings';
 const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
-let uiAudioCtx = null;
+const UI_BUTTON_CLICK_AUDIO_SRC = '/audio/buttonclick.mp3';
+const UI_FEED_BUTTON_AUDIO_SRC = '/audio/feed.wav';
+const UI_TASK_COMPLETE_AUDIO_SRC = '/audio/finishfeedtask.mp3';
+const uiButtonAudioTemplates = {};
+
+function getUIButtonAudioTemplate(kind = 'tap') {
+    const audioSrc = kind === 'feed'
+        ? UI_FEED_BUTTON_AUDIO_SRC
+        : kind === 'task-complete'
+            ? UI_TASK_COMPLETE_AUDIO_SRC
+            : UI_BUTTON_CLICK_AUDIO_SRC;
+    if (!uiButtonAudioTemplates[audioSrc]) {
+        const template = new Audio(audioSrc);
+        template.preload = 'auto';
+        uiButtonAudioTemplates[audioSrc] = template;
+    }
+    return uiButtonAudioTemplates[audioSrc];
+}
 
 function readSettings() {
     try {
@@ -39,42 +56,17 @@ function isUISoundEnabled() {
 export function playGameButtonSfx(kind = 'tap') {
     if (!isUISoundEnabled()) return;
 
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-
-    if (!uiAudioCtx) {
-        uiAudioCtx = new AudioCtx();
+    try {
+        const audioTemplate = getUIButtonAudioTemplate(kind);
+        const clickSfx = audioTemplate.cloneNode(true);
+        clickSfx.volume = kind === 'feed' || kind === 'confirm' || kind === 'task-complete' ? 1 : 0.9;
+        const playPromise = clickSfx.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => { });
+        }
+    } catch {
+        // Ignore playback failures caused by browser autoplay/device restrictions.
     }
-
-    if (uiAudioCtx.state === 'suspended') {
-        uiAudioCtx.resume().catch(() => {});
-    }
-
-    const ctx = uiAudioCtx;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
-
-    const baseFreq = kind === 'confirm' ? 690 : 560;
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(baseFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.22, now + 0.06);
-
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1800, now);
-    filter.Q.value = 0.7;
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.11);
 }
 
 function getDeviceType() {
@@ -286,7 +278,7 @@ const Icons = {
     ),
 };
 
-function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disabled = false, style: extraStyle = {}, size = 'md', icon = null }) {
+function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disabled = false, style: extraStyle = {}, size = 'md', icon = null, sfxKind = 'tap' }) {
     const [pressed, setPressed] = useState(false);
     const [hovered, setHovered] = useState(false);
 
@@ -316,13 +308,13 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
         <button
             data-ui-button="true"
             data-sfx-self="true"
-            onClick={!disabled ? () => { playGameButtonSfx('tap'); onClick?.(); } : undefined}
+            onClick={!disabled ? () => { playGameButtonSfx(sfxKind); onClick?.(); } : undefined}
             onMouseEnter={() => !disabled && setHovered(true)}
             onMouseLeave={() => { setHovered(false); setPressed(false); }}
             onMouseDown={() => !disabled && setPressed(true)}
             onMouseUp={() => setPressed(false)}
             onTouchStart={(e) => { e.preventDefault(); !disabled && setPressed(true); }}
-            onTouchEnd={(e) => { e.preventDefault(); setPressed(false); if (!disabled) { playGameButtonSfx('tap'); onClick?.(); } }}
+            onTouchEnd={(e) => { e.preventDefault(); setPressed(false); if (!disabled) { playGameButtonSfx(sfxKind); onClick?.(); } }}
             style={{
                 all: 'unset',
                 boxSizing: 'border-box',
@@ -540,7 +532,7 @@ export function MainMenu({ onStart, isVisible }) {
     );
 }
 
-export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks }) {
+export function GameHUD({ onMenuClick, onTasksClick, onResetTasks, completedTasks, totalTasks }) {
     const device = useDeviceType();
     const { w, isLandscape } = useViewportInfo();
     const allDone = completedTasks === totalTasks && totalTasks > 0;
@@ -590,6 +582,27 @@ export function GameHUD({ onMenuClick, onTasksClick, completedTasks, totalTasks 
                         {allDone ? <Icons.Star /> : <Icons.Tasks />}
                     </span>
                     <span style={{ fontSize: compact ? 12 : 13, fontWeight: 800, color: allDone ? '#c0392b' : '#374151' }}>{completedTasks}/{totalTasks}</span>
+                </button>
+
+                <button
+                    data-ui-button="true"
+                    onClick={onResetTasks}
+                    title="Reset tasks"
+                    aria-label="Reset tasks"
+                    style={{
+                        ...hudBtn,
+                        width: iconButtonSize,
+                        height: iconButtonSize,
+                        borderRadius: compact ? 13 : 16,
+                        background: 'rgba(255,245,245,.96)',
+                        border: '2px solid rgba(248,113,113,.5)',
+                        color: '#b91c1c',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 0 rgba(185,28,28,.22), 0 8px 18px rgba(185,28,28,.22)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 0 rgba(0,0,0,.14), 0 6px 16px rgba(0,0,0,.12)'; }}
+                    onMouseDown={e => { e.currentTarget.style.transform = 'translateY(2px)'; e.currentTarget.style.boxShadow = '0 1px 0 rgba(0,0,0,.14)'; }}
+                >
+                    <Icons.Trash />
                 </button>
 
                 {device === 'desktop' && (
@@ -738,13 +751,13 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
                 <span style={{ fontSize: 13, fontWeight: 800, color: '#374151' }}>{animalName}</span>
                 {!isTouchDevice && (
                     <div style={{ display: 'flex', gap: 7 }}>
-                        <KeyBtn label="F" text="Feed" color="#ff9f43" onClick={onFeed} />
+                        <KeyBtn label="F" text="Feed" color="#ff9f43" sfxKind="feed" onClick={onFeed} />
                         <KeyBtn label="E" text="View" color="#74b9ff" onClick={onViewDetails} />
                     </div>
                 )}
                 {isTouchDevice && (
                     <div style={{ display: 'flex', gap: 7 }}>
-                        <KeyBtn label="Tap" text="Feed" color="#ff9f43" onClick={onFeed} />
+                        <KeyBtn label="Tap" text="Feed" color="#ff9f43" sfxKind="feed" onClick={onFeed} />
                         <KeyBtn label="Tap" text="View" color="#74b9ff" onClick={onViewDetails} />
                     </div>
                 )}
@@ -753,10 +766,10 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
     );
 }
 
-function KeyBtn({ label, text, color, onClick }) {
+function KeyBtn({ label, text, color, onClick, sfxKind = 'tap' }) {
     const [hov, setHov] = useState(false);
     return (
-        <button onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
+        <button data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
             all: 'unset', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 5,
             padding: '5px 12px', borderRadius: 9999, background: color, color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer',
             boxShadow: hov ? `0 4px 0 ${color}88` : `0 3px 0 ${color}88`,
@@ -780,7 +793,7 @@ export function MobileInteractionButtons({ visible, onFeed, onViewDetails }) {
                 animation: 'kids-slide-up .28s cubic-bezier(.16,1,.3,1) both',
             }}>
                 {[
-                    { label: 'Feed', color: '#ff9f43', shadow: 'rgba(255,159,67,.45)', icon: <Icons.Feed />, onClick: onFeed },
+                    { label: 'Feed', color: '#ff9f43', shadow: 'rgba(255,159,67,.45)', icon: <Icons.Feed />, onClick: onFeed, sfxKind: 'feed' },
                     { label: 'View', color: '#74b9ff', shadow: 'rgba(116,185,255,.45)', icon: <Icons.Eye />, onClick: onViewDetails },
                 ].map(b => (
                     <div key={b.label} style={{ pointerEvents: 'auto' }}>
@@ -792,10 +805,10 @@ export function MobileInteractionButtons({ visible, onFeed, onViewDetails }) {
     );
 }
 
-function TouchBtn({ label, color, shadow, icon, onClick }) {
+function TouchBtn({ label, color, shadow, icon, onClick, sfxKind = 'tap' }) {
     const [pressed, setPressed] = useState(false);
     return (
-        <button onClick={onClick}
+        <button data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }}
             onTouchStart={() => setPressed(true)} onTouchEnd={() => setPressed(false)}
             onMouseDown={() => setPressed(true)} onMouseUp={() => setPressed(false)}
             style={{
@@ -887,6 +900,7 @@ export function AnimalInfoModal({ animal, onClose, onFeed, isFed, placement = 'c
                             color={isFed ? '#95a5a6' : '#00b894'}
                             disabled={isFed}
                             icon={<Icons.Feed />}
+                            sfxKind="feed"
                             size="sm"
                             style={{ justifyContent: 'center', width: '100%' }}
                         >
@@ -933,7 +947,7 @@ export function AnimalInfoModal({ animal, onClose, onFeed, isFed, placement = 'c
                 </div>
 
                 <div style={{ display: 'flex', gap: 10 }}>
-                    <Btn3D onClick={onFeed} color={isFed ? '#95a5a6' : '#00b894'} disabled={isFed} icon={<Icons.Feed />} style={{ flex: 1, justifyContent: 'center' }}>
+                    <Btn3D onClick={onFeed} color={isFed ? '#95a5a6' : '#00b894'} disabled={isFed} icon={<Icons.Feed />} sfxKind="feed" style={{ flex: 1, justifyContent: 'center' }}>
                         {isFed ? 'Already Fed' : 'Feed!'}
                     </Btn3D>
                     <Btn3D onClick={onClose} color="#74b9ff" icon={<Icons.Close />} style={{ flex: 1, justifyContent: 'center' }}>
@@ -1091,21 +1105,54 @@ export function AllAnimalsCelebration({ visible, onClose, onViewCertificate }) {
 
 export function CertificateModal({ isOpen, onClose, playerName = 'Explorer', totalAnimals = 11 }) {
     const dateText = new Date().toLocaleDateString();
+    const [typedName, setTypedName] = useState(playerName);
+    const certificateName = (typedName || '').trim() || playerName;
+
+    useEffect(() => {
+        if (isOpen) {
+            setTypedName(playerName);
+        }
+    }, [isOpen, playerName]);
 
     const handleDownload = useCallback(() => {
-        const dataUrl = createCertificateDataUrl({ playerName, dateText, totalAnimals });
+        const dataUrl = createCertificateDataUrl({ playerName: certificateName, dateText, totalAnimals });
         if (!dataUrl) return;
         const link = document.createElement('a');
         link.href = dataUrl;
         link.download = `bulusan-zoo-certificate-${Date.now()}.png`;
         link.click();
-    }, [dateText, playerName, totalAnimals]);
+    }, [certificateName, dateText, totalAnimals]);
 
     if (!isOpen) return null;
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Completion Certificate" placement="center">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label htmlFor="certificate-player-name" style={{ fontSize: 12, fontWeight: 800, color: '#334155', letterSpacing: '.04em' }}>
+                        PLAYER NAME
+                    </label>
+                    <input
+                        id="certificate-player-name"
+                        type="text"
+                        value={typedName}
+                        onChange={(e) => setTypedName(e.target.value)}
+                        maxLength={40}
+                        placeholder="Type your name"
+                        style={{
+                            width: '100%',
+                            borderRadius: 12,
+                            border: '2px solid #cbd5e1',
+                            padding: '10px 12px',
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: '#0f172a',
+                            outline: 'none',
+                            background: '#ffffff',
+                        }}
+                    />
+                </div>
+
                 <div style={{
                     borderRadius: 16,
                     border: '2px solid #cbd5e1',
@@ -1115,7 +1162,7 @@ export function CertificateModal({ isOpen, onClose, playerName = 'Explorer', tot
                 }}>
                     <p style={{ margin: 0, fontSize: 12, letterSpacing: '.14em', fontWeight: 800, color: '#1d4ed8' }}>CERTIFICATE OF COMPLETION</p>
                     <p style={{ margin: '12px 0 4px', fontSize: 13, color: '#334155', fontWeight: 700 }}>Awarded to</p>
-                    <p style={{ margin: '0 0 8px', fontSize: 30, color: '#b45309', fontWeight: 900 }}>{playerName}</p>
+                    <p style={{ margin: '0 0 8px', fontSize: 30, color: '#b45309', fontWeight: 900 }}>{certificateName}</p>
                     <p style={{ margin: '0 0 10px', fontSize: 14, color: '#0f172a', fontWeight: 700, lineHeight: 1.5 }}>
                         For feeding all {totalAnimals} animals in Bulusan Mini Zoo
                     </p>
