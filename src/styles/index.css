@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@font-face {
+    font-family: 'Departure Mono';
+    src: url('/DepartureMono-Regular.woff') format('woff');
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
 html,
 body,
 #root {

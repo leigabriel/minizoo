@@ -10,11 +10,15 @@ export default defineConfig({
     build: {
         target: 'esnext',
         minify: 'esbuild',
+        chunkSizeWarningLimit: 700,
         rollupOptions: {
             output: {
-                manualChunks: {
-                    three: ['three'],
-                    react: ['react', 'react-dom']
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) return;
+                    if (id.includes('node_modules/three/examples/jsm')) return 'three-examples';
+                    if (id.includes('node_modules/three')) return 'three-core';
+                    if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'react-vendor';
+                    if (id.includes('node_modules/@tailwindcss') || id.includes('node_modules/tailwindcss')) return 'tailwind-vendor';
                 }
             }
         }

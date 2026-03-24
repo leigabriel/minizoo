@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { getTerrainHeight } from '../components/Terrain.jsx';
 
 const WALK_SPEED = 20;
-const RUN_SPEED = 24;
 const ACCELERATION = 12;
 const DECELERATION = 8;
 const JUMP_FORCE = 12;
@@ -36,8 +35,7 @@ export function createMovementHandler(camera, state) {
         const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
         lastTime = currentTime;
 
-        const isRunning = state.keys["shift"];
-        const maxSpeed = isRunning ? RUN_SPEED : WALK_SPEED;
+        const maxSpeed = WALK_SPEED;
 
         // Forward direction in world space (negative Z is forward when looking down -Z)
         forward.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
@@ -120,7 +118,7 @@ export function createMovementHandler(camera, state) {
         const speed = Math.sqrt(velocityX * velocityX + velocityZ * velocityZ);
         state.playerMoveSpeed = speed;
         state.playerIsMoving = speed > 0.55;
-        state.playerIsRunning = isRunning && state.playerIsMoving;
+        state.playerIsRunning = false;
         camera.position.x = nextX;
         camera.position.z = nextZ;
 
@@ -153,9 +151,9 @@ export function createMovementHandler(camera, state) {
         let bobOffset = 0;
         const allowHeadBob = (state.currentCameraMode ?? 'third') === 'first';
         if (allowHeadBob && state.isGrounded && speed > 0.5) {
-            const bobSpeed = HEAD_BOB_SPEED * (isRunning ? 1.4 : 1);
+            const bobSpeed = HEAD_BOB_SPEED;
             bobPhase += speed * dt * bobSpeed;
-            bobOffset = Math.sin(bobPhase) * HEAD_BOB_AMOUNT * (isRunning ? 1.3 : 1);
+            bobOffset = Math.sin(bobPhase) * HEAD_BOB_AMOUNT;
         } else {
             bobPhase *= 0.9;
         }
@@ -200,10 +198,9 @@ export function setupKeyboardControls(state) {
     };
 }
 
-export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef, sprintBtnRef) {
+export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
     let joystickTouchId = null;
     let lookTouchId = null;
-    let sprintTouchId = null;
 
     const isUIInteractionTarget = (target) => {
         if (!(target instanceof Element)) return false;
@@ -245,6 +242,11 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef, sprintB
         }
     };
 
+    const resetLook = () => {
+        state.lActive = false;
+        lookTouchId = null;
+    };
+
     const isInsideElement = (touch, element) => {
         if (!element) return false;
         const rect = element.getBoundingClientRect();
@@ -263,13 +265,6 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef, sprintB
                     state.keys[" "] = true;
                     setTimeout(() => state.keys[" "] = false, 100);
                 }
-                e.preventDefault();
-                continue;
-            }
-
-            if (sprintBtnRef?.current && sprintTouchId === null && (touch.target === sprintBtnRef.current || sprintBtnRef.current.contains(touch.target) || isInsideElement(touch, sprintBtnRef.current))) {
-                sprintTouchId = touch.identifier;
-                state.keys["shift"] = true;
                 e.preventDefault();
                 continue;
             }
@@ -336,33 +331,48 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef, sprintB
                 continue;
             }
             if (touch.identifier === lookTouchId) {
-                state.lActive = false;
-                lookTouchId = null;
+                resetLook();
                 continue;
             }
-            if (touch.identifier === sprintTouchId) {
-                sprintTouchId = null;
-                state.keys["shift"] = false;
-                continue;
-            }
-
             if (isUIInteractionTarget(touch.target)) {
                 continue;
             }
         }
+
+        if (lookTouchId === null && state.controlsEnabled !== false) {
+            for (const activeTouch of e.touches) {
+                if (activeTouch.identifier === joystickTouchId) continue;
+                if (isUIInteractionTarget(activeTouch.target)) continue;
+                lookTouchId = activeTouch.identifier;
+                state.lActive = true;
+                state.lx = activeTouch.clientX;
+                state.ly = activeTouch.clientY;
+                break;
+            }
+        }
+    };
+
+    const handleViewportChange = () => {
+        resetJoystick();
+        resetLook();
     };
 
     window.addEventListener("touchstart", handleTouchStart, { passive: false });
     window.addEventListener("touchmove", handleTouchMove, { passive: false });
     window.addEventListener("touchend", handleTouchEnd);
     window.addEventListener("touchcancel", handleTouchEnd);
+    window.addEventListener("orientationchange", handleViewportChange);
+    window.addEventListener("resize", handleViewportChange);
 
     return () => {
         window.removeEventListener("touchstart", handleTouchStart);
         window.removeEventListener("touchmove", handleTouchMove);
         window.removeEventListener("touchend", handleTouchEnd);
         window.removeEventListener("touchcancel", handleTouchEnd);
-        state.keys["shift"] = false;
+        window.removeEventListener("orientationchange", handleViewportChange);
+        window.removeEventListener("resize", handleViewportChange);
+        resetJoystick();
+        resetLook();
     };
 }
 

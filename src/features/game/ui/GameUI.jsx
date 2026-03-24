@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'https://bulusanzoo.vercel.app';
@@ -306,6 +307,7 @@ function Btn3D({ children, onClick, color = '#4CAF50', textColor = '#fff', disab
 
     return (
         <button
+            type="button"
             data-ui-button="true"
             data-sfx-self="true"
             onClick={!disabled ? () => { playGameButtonSfx(sfxKind); onClick?.(); } : undefined}
@@ -524,7 +526,7 @@ export function MainMenu({ onStart, isVisible }) {
 
                 <div className="pt-1 text-center text-white/80" style={{ fontSize: isMobile ? 11 : 13 }}>
                     {device === 'desktop'
-                        ? 'WASD move, Space jump, Shift run, E/F interact, C camera'
+                        ? 'WASD move, Space jump, E/F interact, C camera'
                         : 'Use joystick and action buttons to explore and interact'}
                 </div>
             </div>
@@ -629,7 +631,7 @@ export function SettingsPanel({ isOpen, onClose, onQuit }) {
 
     const KB = [
         { action: 'Move', key: 'WASD' }, { action: 'Jump', key: 'Space' },
-        { action: 'Run', key: 'Shift' }, { action: 'Interact', key: 'E' },
+        { action: 'Interact', key: 'E' },
         { action: 'Feed', key: 'F' }, { action: 'Close', key: 'Esc' },
     ];
 
@@ -766,10 +768,117 @@ export function InteractionPrompt({ visible, onFeed, onViewDetails, animalName, 
     );
 }
 
+export function NPCInteractionPrompt({ visible, onInteract, npcName = 'Zoo Staff', isTouchDevice }) {
+    if (!visible) return null;
+    const bottomOffset = isTouchDevice ? 'max(190px, env(safe-area-inset-bottom) + 142px)' : 82;
+    return (
+        <div style={{
+            position: 'fixed', bottom: bottomOffset, left: 0, right: 0,
+            zIndex: 110, display: 'flex', justifyContent: 'center', pointerEvents: 'none'
+        }}>
+            <div style={{
+                pointerEvents: 'auto',
+                animation: 'kids-slide-up .28s cubic-bezier(.16,1,.3,1) both',
+                background: 'rgba(255,255,255,.97)', borderRadius: 9999,
+                padding: '9px 16px', boxShadow: '0 8px 32px rgba(0,0,0,.16)',
+                border: '3px solid #60a5fa',
+                display: 'flex', alignItems: 'center', gap: 10,
+                whiteSpace: 'nowrap',
+                maxWidth: 'calc(100vw - 28px)',
+            }}>
+                <span style={{ color: '#1d4ed8', display: 'flex' }}><Icons.User /></span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#1e293b' }}>{npcName}</span>
+                {!isTouchDevice && (
+                    <div style={{ display: 'flex', gap: 7 }}>
+                        <KeyBtn label="E" text="Talk" color="#3b82f6" onClick={onInteract} />
+                    </div>
+                )}
+                {isTouchDevice && (
+                    <div style={{ display: 'flex', gap: 7 }}>
+                        <KeyBtn label="Tap" text="Talk" color="#3b82f6" onClick={onInteract} />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export function NPCDialogueModal({ isOpen, onClose, npcName, npcRole, message, choices = [], onSelectChoice }) {
+    if (!isOpen) return null;
+
+    return (
+        <div data-ui-modal="true" style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 220,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left))',
+            background: 'rgba(2, 10, 22, 0.62)',
+        }}>
+            <div style={{
+                width: 'min(92vw, 460px)',
+                maxHeight: 'min(78dvh, 620px)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                borderRadius: 18,
+                border: '2px solid rgba(191, 219, 254, 0.6)',
+                background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+                boxShadow: '0 20px 44px rgba(0,0,0,.32)',
+                padding: '14px 14px 12px',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#1e3a8a' }}>{npcName} - {npcRole}</p>
+                    <button
+                        type="button"
+                        data-ui-button="true"
+                        onClick={onClose}
+                        style={{
+                            all: 'unset', boxSizing: 'border-box', width: 28, height: 28,
+                            borderRadius: 10, background: '#e2e8f0', color: '#334155',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                        }}
+                    >
+                        <Icons.Close />
+                    </button>
+                </div>
+
+                <div style={{
+                    background: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
+                    border: '2px solid rgba(59,130,246,.28)',
+                    borderRadius: 14,
+                    padding: '12px 13px',
+                    marginBottom: 12,
+                }}>
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, fontWeight: 600, color: '#334155' }}>{message}</p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 10 }}>
+                    {choices.map((choice) => (
+                        <Btn3D
+                            key={choice.id}
+                            onClick={() => onSelectChoice?.(choice)}
+                            color="#0ea5e9"
+                            style={{ justifyContent: 'flex-start', width: '100%', padding: '10px 12px' }}
+                        >
+                            {choice.label}
+                        </Btn3D>
+                    ))}
+                </div>
+
+                <Btn3D onClick={onClose} color="#64748b" icon={<Icons.Close />} style={{ justifyContent: 'center' }}>
+                    End Conversation
+                </Btn3D>
+            </div>
+        </div>
+    );
+}
+
 function KeyBtn({ label, text, color, onClick, sfxKind = 'tap' }) {
     const [hov, setHov] = useState(false);
     return (
-        <button data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
+        <button type="button" data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
             all: 'unset', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 5,
             padding: '5px 12px', borderRadius: 9999, background: color, color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer',
             boxShadow: hov ? `0 4px 0 ${color}88` : `0 3px 0 ${color}88`,
@@ -808,7 +917,7 @@ export function MobileInteractionButtons({ visible, onFeed, onViewDetails }) {
 function TouchBtn({ label, color, shadow, icon, onClick, sfxKind = 'tap' }) {
     const [pressed, setPressed] = useState(false);
     return (
-        <button data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }}
+        <button type="button" data-ui-button="true" data-sfx-self="true" onClick={() => { playGameButtonSfx(sfxKind); onClick?.(); }}
             onTouchStart={() => setPressed(true)} onTouchEnd={() => setPressed(false)}
             onMouseDown={() => setPressed(true)} onMouseUp={() => setPressed(false)}
             style={{
@@ -1110,6 +1219,7 @@ export function CertificateModal({ isOpen, onClose, playerName = 'Explorer', tot
 
     useEffect(() => {
         if (isOpen) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setTypedName(playerName);
         }
     }, [isOpen, playerName]);
@@ -1333,81 +1443,6 @@ export function JumpButton({ jumpRef }) {
             }}>
             <Icons.ArrowUp />
             <span style={{ fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
-        </button>
-    );
-}
-
-export function SprintButton({ sprintRef }) {
-    const [pressed, setPressed] = useState(false);
-    const isTouch = useIsTouch();
-    const { isLandscape, isShort } = useViewportInfo();
-    if (!isTouch) return null;
-
-    const trackWidth = isLandscape || isShort ? 120 : 136;
-    const trackHeight = isLandscape || isShort ? 42 : 46;
-    const knobSize = isLandscape || isShort ? 34 : 38;
-    const bottom = isLandscape || isShort
-        ? 'max(84px, env(safe-area-inset-bottom) + 4px)'
-        : 'max(110px, env(safe-area-inset-bottom) + 8px)';
-
-    return (
-        <button
-            ref={sprintRef}
-            onTouchStart={() => setPressed(true)}
-            onTouchEnd={() => setPressed(false)}
-            onTouchCancel={() => setPressed(false)}
-            onMouseDown={() => setPressed(true)}
-            onMouseUp={() => setPressed(false)}
-            style={{
-                all: 'unset', boxSizing: 'border-box',
-                position: 'fixed',
-                bottom,
-                right: 'max(20px, env(safe-area-inset-right) + 4px)',
-                width: trackWidth,
-                height: trackHeight,
-                borderRadius: 999,
-                background: pressed ? 'linear-gradient(145deg, #22c55e, #16a34a)' : 'linear-gradient(145deg, #f59e0b, #f97316)',
-                border: '3px solid rgba(255,255,255,.82)',
-                boxShadow: pressed
-                    ? '0 2px 0 rgba(21,128,61,.28), 0 10px 20px rgba(34,197,94,.34)'
-                    : '0 5px 0 rgba(154,52,18,.35), 0 10px 22px rgba(249,115,22,.42)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                transform: pressed ? 'translateY(2px)' : 'translateY(0)',
-                transition: 'all .12s',
-                zIndex: 110,
-                touchAction: 'none',
-                padding: '0 6px 0 7px',
-            }}
-        >
-            <span style={{ fontSize: isLandscape || isShort ? 8 : 9, fontWeight: 900, color: 'rgba(255,255,255,.95)', letterSpacing: '.1em', marginLeft: 4 }}>
-                {pressed ? 'ON' : 'OFF'}
-            </span>
-            <div
-                style={{
-                    width: knobSize,
-                    height: knobSize,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(180deg, #ffffff, #e5e7eb)',
-                    border: '2px solid rgba(15,23,42,.18)',
-                    boxShadow: '0 2px 6px rgba(0,0,0,.25)',
-                    transform: pressed ? `translateX(${trackWidth - knobSize - 18}px)` : 'translateX(0)',
-                    transition: 'transform .12s ease-out',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: pressed ? '#16a34a' : '#f97316',
-                    fontSize: isLandscape || isShort ? 13 : 14,
-                    fontWeight: 900,
-                }}
-            >
-                ⚡
-            </div>
-            <span style={{ fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.95)', letterSpacing: '.08em', marginRight: 4 }}>
-                SPRINT
-            </span>
         </button>
     );
 }
@@ -1856,6 +1891,9 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
     if (!isOpen) return null;
 
     const isBottom = placement === 'bottom';
+    const useBlurBackdrop = typeof window !== 'undefined'
+        ? !window.matchMedia('(pointer: coarse)').matches
+        : true;
     const bottomBase = bottomOffset || 'max(16px, env(safe-area-inset-bottom))';
     const topValue = isBottom
         ? `calc(100% - ${bottomBase})`
@@ -1873,7 +1911,7 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
             <div onClick={showBackdrop ? onClose : undefined} style={{
                 position: 'absolute', inset: 0,
                 background: showBackdrop ? 'rgba(0,0,0,.55)' : 'transparent',
-                backdropFilter: showBackdrop ? 'blur(8px)' : 'none',
+                backdropFilter: (showBackdrop && useBlurBackdrop) ? 'blur(8px)' : 'none',
                 pointerEvents: showBackdrop ? 'auto' : 'none',
             }} />
             <div style={{
