@@ -114,7 +114,7 @@ const ANIMAL_CONFIGS = [
     },
     {
         file: 'Stag.gltf',
-        soundFile: 'stag.mp3',
+        soundFile: 'redd.mp3',
         scale: 1.3,
         speed: 0.06,
         runSpeed: 0.13,
@@ -127,7 +127,7 @@ const ANIMAL_CONFIGS = [
     },
     {
         file: 'Bull.gltf',
-        soundFile: 'bull.mp3',
+        soundFile: 'bull.wav',
         scale: 1.4,
         speed: 0.045,
         runSpeed: 0.085,
