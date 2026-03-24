@@ -144,6 +144,46 @@ const AMBIENT_SOUND_RADIUS = 55;
 const AMBIENT_SOUND_RADIUS_SQ = AMBIENT_SOUND_RADIUS * AMBIENT_SOUND_RADIUS;
 const AMBIENT_SOUND_MIN_INTERVAL = 5;
 const AMBIENT_SOUND_MAX_INTERVAL = 11;
+let CONTACT_SHADOW_TEXTURE = null;
+
+function getContactShadowTexture() {
+    if (CONTACT_SHADOW_TEXTURE) return CONTACT_SHADOW_TEXTURE;
+
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.08, size / 2, size / 2, size * 0.5);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    CONTACT_SHADOW_TEXTURE = new THREE.CanvasTexture(canvas);
+    CONTACT_SHADOW_TEXTURE.colorSpace = THREE.SRGBColorSpace;
+    CONTACT_SHADOW_TEXTURE.needsUpdate = true;
+    return CONTACT_SHADOW_TEXTURE;
+}
+
+function createContactShadow(size, opacity) {
+    const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(size, size),
+        new THREE.MeshBasicMaterial({
+            map: getContactShadowTexture(),
+            transparent: true,
+            opacity,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+            toneMapped: false
+        })
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = 1;
+    return mesh;
+}
 
 function createAnimalSound(soundFile) {
     if (!soundFile || typeof Audio === 'undefined') return null;
@@ -193,12 +233,32 @@ class GLTFAnimal {
         this.group = model;
         this.config = config;
         this.obstacles = obstacles; // Store obstacles for AI logic
+        this.dynamicBox = new THREE.Box3();
         this.mixer = null;
         this.actions = {};
         this.currentAction = null;
         this.transitionTime = 0.4;
 
         this.group.scale.setScalar(config.scale);
+
+        if (typeof config.targetHeight === 'number' && config.targetHeight > 0) {
+            // Some third-party assets come with wildly different unit scales.
+            // Fit to a target world height so they appear at expected size.
+            const fitBox = new THREE.Box3().setFromObject(this.group);
+            const fitSize = new THREE.Vector3();
+            fitBox.getSize(fitSize);
+            const sourceHeight = Math.max(fitSize.y, 0.001);
+            const rawFitScale = config.targetHeight / sourceHeight;
+            // Guard against bad bounds from malformed/skinned assets.
+            const fitScale = Number.isFinite(rawFitScale)
+                ? THREE.MathUtils.clamp(rawFitScale, 0.01, 25)
+                : 1;
+            this.group.scale.multiplyScalar(fitScale);
+        }
+
+        const alignedBox = new THREE.Box3().setFromObject(this.group);
+        this.baseYOffset = THREE.MathUtils.clamp(-alignedBox.min.y, -2, 12);
+
         this.group.traverse(child => {
             if (child.isMesh) {
                 child.castShadow = false;
@@ -242,20 +302,27 @@ class GLTFAnimal {
         this.turnSpeed = 0.04;
         this.bounds = 170;
         this.radius = config.collisionRadius ?? Math.max(1.1, config.scale * 0.65);
+        this.movementStyle = config.movementStyle ?? 'default';
         this.currentSpeed = 0;
         this.targetSpeed = 0;
         this.sound = createAnimalSound(config.soundFile);
         this.nextAmbientSoundAt = Math.random() * 3;
+        this.motionOffset = Math.random() * Math.PI * 2;
+        this.shadow = createContactShadow(this.radius * 2.35, 0.23);
 
         const spawn = findSpawnPosition(spawnIndex, ANIMAL_CONFIGS.length, this.bounds, this.radius, this.obstacles);
         this.pos.x = spawn.x;
         this.pos.z = spawn.z;
 
         const h = getTerrainHeight(this.pos.x, this.pos.z);
-        this.group.position.set(this.pos.x, h, this.pos.z);
+        this.group.position.set(this.pos.x, h + this.baseYOffset, this.pos.z);
         this.group.rotation.y = this.angle;
+        this.dynamicBox.setFromObject(this.group);
+        this.groundOffsetFromMin = this.group.position.y - this.dynamicBox.min.y;
 
+        this.shadow.position.set(this.pos.x, h + 0.055, this.pos.z);
         scene.add(this.group);
+        scene.add(this.shadow);
     }
 
     getInfo() {
@@ -297,9 +364,9 @@ class GLTFAnimal {
 
         let action = this.actions[name];
         if (!action) {
-            const walkKeys = actionKeys.filter(k => k.includes('walk') || k.includes('trot'));
-            const runKeys = actionKeys.filter(k => k.includes('run') || k.includes('gallop'));
-            const idleKeys = actionKeys.filter(k => k.includes('idle') || k.includes('stand') || k.includes('breathing') || k.includes('eating'));
+            const walkKeys = actionKeys.filter(k => k.includes('walk') || k.includes('trot') || k.includes('prowl') || k.includes('stalk'));
+            const runKeys = actionKeys.filter(k => k.includes('run') || k.includes('gallop') || k.includes('sprint') || k.includes('leap'));
+            const idleKeys = actionKeys.filter(k => k.includes('idle') || k.includes('stand') || k.includes('breathing') || k.includes('eating') || k.includes('rest') || k.includes('sit'));
 
             if (name === 'walk' && walkKeys.length > 0) action = this.actions[walkKeys[0]];
             else if (name === 'run' && runKeys.length > 0) action = this.actions[runKeys[0]];
@@ -360,11 +427,65 @@ class GLTFAnimal {
         }
 
         const h = getTerrainHeight(this.pos.x, this.pos.z);
-        this.group.position.set(this.pos.x, h, this.pos.z);
+        this.group.position.set(this.pos.x, h + this.baseYOffset, this.pos.z);
         this.group.rotation.y = this.angle;
+
+        if (this.movementStyle === 'bigCat') {
+            const motionT = t + this.motionOffset;
+            if (this.state === 'idle') {
+                // Slow breathing and tiny body sway for natural resting posture.
+                this.group.position.y += Math.sin(motionT * 1.6) * 0.045;
+                this.group.rotation.z = Math.sin(motionT * 0.7) * 0.018;
+            } else if (this.state === 'walk') {
+                // Subtle shoulder bob while prowling.
+                this.group.position.y += Math.sin(motionT * 5.2) * 0.06;
+                this.group.rotation.z = Math.sin(motionT * 2.6) * 0.012;
+            } else {
+                this.group.position.y += Math.sin(motionT * 7.6) * 0.085;
+                this.group.rotation.z = 0;
+            }
+        } else {
+            this.group.rotation.z = 0;
+        }
+
+        // Ground using a stable offset captured at spawn so malformed animated bounds don't sink models.
+        const groundClearance = this.config.groundClearance ?? 0.01;
+        const desiredGroundY = h + groundClearance + (this.groundOffsetFromMin ?? this.baseYOffset);
+        const groundingDelta = THREE.MathUtils.clamp(desiredGroundY - this.group.position.y, -0.045, 0.09);
+        this.group.position.y += groundingDelta;
+
+        if (this.shadow) {
+            const airHeight = Math.max(0, this.group.position.y - desiredGroundY);
+            this.shadow.position.set(this.pos.x, h + 0.055, this.pos.z);
+            this.shadow.material.opacity = THREE.MathUtils.clamp(0.23 - airHeight * 0.1, 0.09, 0.23);
+        }
     }
 
     switchBehavior() {
+        if (this.movementStyle === 'bigCat') {
+            const rand = Math.random();
+            if (rand < 0.56) {
+                this.state = 'idle';
+                this.timer = 6 + Math.random() * 8;
+                this.targetSpeed = 0;
+                this.targetAngle = this.angle + (Math.random() - 0.5) * 0.8;
+                this.playAnimation('idle');
+            } else if (rand < 0.92) {
+                this.state = 'walk';
+                this.timer = 7 + Math.random() * 10;
+                this.targetAngle = this.angle + (Math.random() - 0.5) * 1.6;
+                this.targetSpeed = this.config.speed * (0.9 + Math.random() * 0.25);
+                this.playAnimation('walk');
+            } else {
+                this.state = 'run';
+                this.timer = 2.3 + Math.random() * 2.2;
+                this.targetAngle = this.angle + (Math.random() - 0.5) * 1.15;
+                this.targetSpeed = this.config.runSpeed * (0.95 + Math.random() * 0.22);
+                this.playAnimation('run');
+            }
+            return;
+        }
+
         const rand = Math.random();
         if (rand < 0.45) {
             this.state = 'idle';
@@ -394,6 +515,12 @@ class GLTFAnimal {
         if (this.mixer) {
             this.mixer.stopAllAction();
             this.mixer.uncacheRoot(this.group);
+        }
+        if (this.shadow) {
+            this.shadow.parent?.remove(this.shadow);
+            this.shadow.geometry?.dispose();
+            this.shadow.material?.dispose?.();
+            this.shadow = null;
         }
         this.group.traverse(child => {
             if (child.isMesh) {

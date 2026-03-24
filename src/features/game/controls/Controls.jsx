@@ -23,6 +23,10 @@ export function createMovementHandler(camera, state) {
     const right = new THREE.Vector3();
 
     return function handleMovement() {
+        if (state.controlsEnabled === false) {
+            return;
+        }
+
         if (state.cameraControlLockedUntil && performance.now() < state.cameraControlLockedUntil) {
             return;
         }
@@ -92,8 +96,9 @@ export function createMovementHandler(camera, state) {
         let nextZ = camera.position.z + velocityZ * dt;
 
         const PLAYER_RADIUS = 1.5; // Width of the player's body
-        if (state.obstacles && state.obstacles.length > 0) {
-            for (const obs of state.obstacles) {
+        const resolveObstacles = (list) => {
+            if (!list || list.length === 0) return;
+            for (const obs of list) {
                 const dx = nextX - obs.x;
                 const dz = nextZ - obs.z;
                 const distSq = dx * dx + dz * dz;
@@ -107,10 +112,15 @@ export function createMovementHandler(camera, state) {
                     nextZ += (dz / dist) * overlap;
                 }
             }
-        }
+        };
+        resolveObstacles(state.obstacles);
+        resolveObstacles(state.animalObstacles);
 
         // Apply corrected positions
         const speed = Math.sqrt(velocityX * velocityX + velocityZ * velocityZ);
+        state.playerMoveSpeed = speed;
+        state.playerIsMoving = speed > 0.55;
+        state.playerIsRunning = isRunning && state.playerIsMoving;
         camera.position.x = nextX;
         camera.position.z = nextZ;
 
@@ -128,7 +138,8 @@ export function createMovementHandler(camera, state) {
         }
 
         // Terrain following
-        const groundLevel = getTerrainHeight(camera.position.x, camera.position.z) + PLAYER_HEIGHT;
+        const playerHeight = state.playerHeight ?? PLAYER_HEIGHT;
+        const groundLevel = getTerrainHeight(camera.position.x, camera.position.z) + playerHeight;
         if (state.isGrounded) {
             camera.position.y = groundLevel;
         } else if (camera.position.y <= groundLevel) {
@@ -140,7 +151,8 @@ export function createMovementHandler(camera, state) {
 
         // Head bob
         let bobOffset = 0;
-        if (state.isGrounded && speed > 0.5) {
+        const allowHeadBob = (state.currentCameraMode ?? 'third') === 'first';
+        if (allowHeadBob && state.isGrounded && speed > 0.5) {
             const bobSpeed = HEAD_BOB_SPEED * (isRunning ? 1.4 : 1);
             bobPhase += speed * dt * bobSpeed;
             bobOffset = Math.sin(bobPhase) * HEAD_BOB_AMOUNT * (isRunning ? 1.3 : 1);
@@ -188,9 +200,10 @@ export function setupKeyboardControls(state) {
     };
 }
 
-export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
+export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef, sprintBtnRef) {
     let joystickTouchId = null;
     let lookTouchId = null;
+    let sprintTouchId = null;
 
     const isUIInteractionTarget = (target) => {
         if (!(target instanceof Element)) return false;
@@ -241,11 +254,22 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
 
     const handleTouchStart = (e) => {
         for (const touch of e.changedTouches) {
+            if (state.controlsEnabled === false) {
+                continue;
+            }
+
             if (jumpBtnRef?.current && (touch.target === jumpBtnRef.current || jumpBtnRef.current.contains(touch.target) || isInsideElement(touch, jumpBtnRef.current))) {
                 if (!state.isJumping && state.isGrounded) {
                     state.keys[" "] = true;
                     setTimeout(() => state.keys[" "] = false, 100);
                 }
+                e.preventDefault();
+                continue;
+            }
+
+            if (sprintBtnRef?.current && sprintTouchId === null && (touch.target === sprintBtnRef.current || sprintBtnRef.current.contains(touch.target) || isInsideElement(touch, sprintBtnRef.current))) {
+                sprintTouchId = touch.identifier;
+                state.keys["shift"] = true;
                 e.preventDefault();
                 continue;
             }
@@ -272,6 +296,10 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
     };
 
     const handleTouchMove = (e) => {
+        if (state.controlsEnabled === false) {
+            return;
+        }
+
         let shouldPreventDefault = false;
         for (const touch of e.changedTouches) {
             if (touch.identifier === joystickTouchId && state.sActive) {
@@ -312,6 +340,11 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
                 lookTouchId = null;
                 continue;
             }
+            if (touch.identifier === sprintTouchId) {
+                sprintTouchId = null;
+                state.keys["shift"] = false;
+                continue;
+            }
 
             if (isUIInteractionTarget(touch.target)) {
                 continue;
@@ -329,11 +362,16 @@ export function setupTouchControls(state, baseRef, stickRef, jumpBtnRef) {
         window.removeEventListener("touchmove", handleTouchMove);
         window.removeEventListener("touchend", handleTouchEnd);
         window.removeEventListener("touchcancel", handleTouchEnd);
+        state.keys["shift"] = false;
     };
 }
 
 export function setupMouseControls(state) {
     const handleMouseMove = (e) => {
+        if (state.controlsEnabled === false) {
+            return;
+        }
+
         if (!('ontouchstart' in window) && e.buttons === 1) {
             state.yaw -= e.movementX * 0.003;
             state.pitch -= e.movementY * 0.003;

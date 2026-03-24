@@ -32,7 +32,8 @@ export function createTerrain(scene) {
     for (let i = 0; i < posAttr.count; i++) {
         const x = posAttr.getX(i);
         const y = posAttr.getY(i);
-        const height = getTerrainHeight(x, y);
+        // PlaneGeometry is rotated to XZ world space, so local +Y maps to world -Z.
+        const height = getTerrainHeight(x, -y);
         posAttr.setZ(i, height);
 
         const noise1 = Math.sin(x * 0.025) * Math.cos(y * 0.025);

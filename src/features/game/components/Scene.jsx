@@ -20,21 +20,20 @@ export function createCamera() {
 
 export function createRenderer(container) {
     const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 1.2) : Math.min(window.devicePixelRatio, 1.5);
+    const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 1.0) : Math.min(window.devicePixelRatio, 1.25);
 
     const renderer = new THREE.WebGLRenderer({
         antialias: !isMobile && window.devicePixelRatio <= 1.5,
-        powerPreference: 'high-performance',
+        powerPreference: 'default',
         stencil: false,
         depth: true,
         alpha: false,
-        preserveDrawingBuffer: true,
+        preserveDrawingBuffer: false,
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(pixelRatio);
 
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.BasicShadowMap;
+    renderer.shadowMap.enabled = false;
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0; // Restored to default balanced exposure
@@ -55,17 +54,7 @@ export function createLighting(scene) {
     // Natural daylight sun (not overwhelmingly bright)
     const sun = new THREE.DirectionalLight(0xfff5e6, 1.4);
     sun.position.set(100, 150, 80);
-    sun.castShadow = true;
-
-    sun.shadow.mapSize.set(512, 512);
-    sun.shadow.camera.left = -250;
-    sun.shadow.camera.right = 250;
-    sun.shadow.camera.top = 250;
-    sun.shadow.camera.bottom = -250;
-    sun.shadow.camera.near = 10;
-    sun.shadow.camera.far = 500;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.05;
+    sun.castShadow = false;
     scene.add(sun);
 
     const fill = new THREE.DirectionalLight(0xaaccff, 0.4);

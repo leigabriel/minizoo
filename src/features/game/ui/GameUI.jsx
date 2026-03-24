@@ -1208,6 +1208,27 @@ export function QuitModal({ isOpen, onConfirm, onCancel }) {
     );
 }
 
+export function ResetTasksModal({ isOpen, onConfirm, onCancel }) {
+    if (!isOpen) return null;
+    return (
+        <Modal isOpen={isOpen} onClose={onCancel} showClose={false}>
+            <div style={{ textAlign: 'center' }}>
+                <div className="kids-bounce" style={{ width: 80, height: 80, margin: '0 auto 16px', background: 'linear-gradient(135deg, #fef3c7, #fdba74)', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(249,115,22,.3)' }}>
+                    <Icons.Trash />
+                </div>
+                <h3 style={{ fontSize: 24, fontWeight: 400, margin: '0 0 8px', color: '#f97316' }}>Reset Feeding Tasks?</h3>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#6B7280', marginBottom: 22, lineHeight: 1.65 }}>
+                    This will clear all current feeding progress.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <Btn3D onClick={onCancel} color="#00b894" icon={<Icons.Close />} style={{ width: '100%', justifyContent: 'center' }}>Cancel</Btn3D>
+                    <Btn3D onClick={onConfirm} color="#e74c3c" icon={<Icons.Trash />} style={{ width: '100%', justifyContent: 'center' }}>Yes, Reset</Btn3D>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
 export function WelcomePopup({ visible, message }) {
     if (!visible) return null;
     return (
@@ -1312,6 +1333,81 @@ export function JumpButton({ jumpRef }) {
             }}>
             <Icons.ArrowUp />
             <span style={{ fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.9)', letterSpacing: '.1em' }}>JUMP</span>
+        </button>
+    );
+}
+
+export function SprintButton({ sprintRef }) {
+    const [pressed, setPressed] = useState(false);
+    const isTouch = useIsTouch();
+    const { isLandscape, isShort } = useViewportInfo();
+    if (!isTouch) return null;
+
+    const trackWidth = isLandscape || isShort ? 120 : 136;
+    const trackHeight = isLandscape || isShort ? 42 : 46;
+    const knobSize = isLandscape || isShort ? 34 : 38;
+    const bottom = isLandscape || isShort
+        ? 'max(84px, env(safe-area-inset-bottom) + 4px)'
+        : 'max(110px, env(safe-area-inset-bottom) + 8px)';
+
+    return (
+        <button
+            ref={sprintRef}
+            onTouchStart={() => setPressed(true)}
+            onTouchEnd={() => setPressed(false)}
+            onTouchCancel={() => setPressed(false)}
+            onMouseDown={() => setPressed(true)}
+            onMouseUp={() => setPressed(false)}
+            style={{
+                all: 'unset', boxSizing: 'border-box',
+                position: 'fixed',
+                bottom,
+                right: 'max(20px, env(safe-area-inset-right) + 4px)',
+                width: trackWidth,
+                height: trackHeight,
+                borderRadius: 999,
+                background: pressed ? 'linear-gradient(145deg, #22c55e, #16a34a)' : 'linear-gradient(145deg, #f59e0b, #f97316)',
+                border: '3px solid rgba(255,255,255,.82)',
+                boxShadow: pressed
+                    ? '0 2px 0 rgba(21,128,61,.28), 0 10px 20px rgba(34,197,94,.34)'
+                    : '0 5px 0 rgba(154,52,18,.35), 0 10px 22px rgba(249,115,22,.42)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                transform: pressed ? 'translateY(2px)' : 'translateY(0)',
+                transition: 'all .12s',
+                zIndex: 110,
+                touchAction: 'none',
+                padding: '0 6px 0 7px',
+            }}
+        >
+            <span style={{ fontSize: isLandscape || isShort ? 8 : 9, fontWeight: 900, color: 'rgba(255,255,255,.95)', letterSpacing: '.1em', marginLeft: 4 }}>
+                {pressed ? 'ON' : 'OFF'}
+            </span>
+            <div
+                style={{
+                    width: knobSize,
+                    height: knobSize,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(180deg, #ffffff, #e5e7eb)',
+                    border: '2px solid rgba(15,23,42,.18)',
+                    boxShadow: '0 2px 6px rgba(0,0,0,.25)',
+                    transform: pressed ? `translateX(${trackWidth - knobSize - 18}px)` : 'translateX(0)',
+                    transition: 'transform .12s ease-out',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: pressed ? '#16a34a' : '#f97316',
+                    fontSize: isLandscape || isShort ? 13 : 14,
+                    fontWeight: 900,
+                }}
+            >
+                ⚡
+            </div>
+            <span style={{ fontSize: isLandscape || isShort ? 7 : 8, fontWeight: 900, color: 'rgba(255,255,255,.95)', letterSpacing: '.08em', marginRight: 4 }}>
+                SPRINT
+            </span>
         </button>
     );
 }
