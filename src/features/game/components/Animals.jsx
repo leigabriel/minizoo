@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneWithSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { getTerrainHeight } from './Terrain.jsx';
+import { resolveAssetUrl } from '../utils/localAssets.js';
 
 const ANIMAL_CONFIGS = [
     {
@@ -114,7 +115,7 @@ const ANIMAL_CONFIGS = [
     },
     {
         file: 'Stag.gltf',
-        soundFile: 'redd.mp3',
+        soundFile: 'red.mp3',
         scale: 1.3,
         speed: 0.06,
         runSpeed: 0.13,
@@ -137,6 +138,27 @@ const ANIMAL_CONFIGS = [
         species: 'Bos taurus',
         emoji: '🐃',
         description: 'A powerful and muscular male bovine, respected for its strength and presence.'
+    },
+    {
+        file: 'tiger/scene.gltf',
+        floorHeight: 1.7,
+        scale: 4.25,
+        soundFile: 'tiger.mp3',
+        speed: 0.038,
+        runSpeed: 0.082,
+        count: 1,
+        collisionRadius: 2.2,
+        movementStyle: 'bigCat',
+        idleAnimation: 'Eat',
+        specialAnimation: 'Howl',
+        specialAnimationInterval: 5,
+        specialAnimationChance: 0.65,
+        specialAnimationTimeScale: 0.78,
+        groundClearance: 0.28,
+        name: 'Bengal Tiger',
+        species: 'Panthera tigris tigris',
+        emoji: '🐅',
+        description: 'A majestic big cat in a natural standing idle pose.'
     }
 ];
 
@@ -188,10 +210,20 @@ function createContactShadow(size, opacity) {
 function createAnimalSound(soundFile) {
     if (!soundFile || typeof Audio === 'undefined') return null;
     const normalized = String(soundFile).replace(/^\/+/, '');
-    const audio = new Audio(`/audio/${normalized}`);
+    const fallbackPath = `/audio/${normalized}`;
+    const audio = new Audio(fallbackPath);
     audio.preload = 'auto';
     audio.volume = 0.75;
     audio.setAttribute('playsinline', 'true');
+
+    resolveAssetUrl(fallbackPath)
+        .then((assetUrl) => {
+            if (assetUrl) {
+                audio.src = assetUrl;
+            }
+        })
+        .catch(() => { });
+
     return audio;
 }
 
@@ -227,6 +259,21 @@ function findSpawnPosition(spawnIndex, totalAnimals, bounds, radius, obstacles) 
     };
 }
 
+function getTerrainNormalAt(x, z, sample = 0.75) {
+    const hL = getTerrainHeight(x - sample, z);
+    const hR = getTerrainHeight(x + sample, z);
+    const hD = getTerrainHeight(x, z - sample);
+    const hU = getTerrainHeight(x, z + sample);
+    return new THREE.Vector3(hL - hR, 2 * sample, hD - hU).normalize();
+}
+
+function getRandomSpecialInterval(config) {
+    const min = config.specialAnimationIntervalMin ?? config.specialAnimationInterval ?? 0;
+    const max = config.specialAnimationIntervalMax ?? min;
+    if (max <= min) return Math.max(0, min);
+    return min + Math.random() * (max - min);
+}
+
 class GLTFAnimal {
     // Added 'obstacles' to the constructor
     constructor(model, animations, config, scene, spawnIndex, obstacles) {
@@ -257,7 +304,11 @@ class GLTFAnimal {
         }
 
         const alignedBox = new THREE.Box3().setFromObject(this.group);
+        // this.baseYOffset = THREE.MathUtils.clamp(-alignedBox.min.y, -2, 12);
         this.baseYOffset = THREE.MathUtils.clamp(-alignedBox.min.y, -2, 12);
+        if (typeof config.floorHeight === 'number') {
+            this.baseYOffset += config.floorHeight;
+        }
 
         this.group.traverse(child => {
             if (child.isMesh) {
@@ -281,12 +332,19 @@ class GLTFAnimal {
 
             const actionKeys = Object.keys(this.actions);
             if (actionKeys.length > 0) {
-                const idleKey = actionKeys.find(k => k.includes('idle') || k.includes('stand') || k.includes('breathing')) || actionKeys[0];
+                const forcedIdleName = this.config.idleAnimation ? this.config.idleAnimation.toLowerCase() : '';
+                const forcedIdleKey = forcedIdleName
+                    ? actionKeys.find(k => k === forcedIdleName || k.includes(forcedIdleName))
+                    : null;
+                const safeIdleKeys = actionKeys.filter((k) => (k.includes('run') || k.includes('walk') || k.includes('idle') || k.includes('stand') || k.includes('breathing') || k.includes('eating') || k.includes('eat') || k.includes('rest') || k.includes('sit')) && !k.includes('lie') && !k.includes('prone') && !k.includes('attack') && !k.includes('death'));
+                const safestAnyKey = actionKeys.find((k) => !k.includes('lie') && !k.includes('prone') && !k.includes('attack') && !k.includes('death'));
+                const idleKey = forcedIdleKey || safeIdleKeys[0] || safestAnyKey;
                 const firstAction = this.actions[idleKey];
                 if (firstAction) {
                     firstAction.reset();
                     firstAction.play();
                     this.currentAction = firstAction;
+                    this.mixer.update(0);
                 }
             }
         }
@@ -309,6 +367,12 @@ class GLTFAnimal {
         this.nextAmbientSoundAt = Math.random() * 3;
         this.motionOffset = Math.random() * Math.PI * 2;
         this.shadow = createContactShadow(this.radius * 2.35, 0.23);
+        this.slopePitch = 0;
+        this.slopeRoll = 0;
+        this.nextSpecialAnimationAt = performance.now() * 0.001 + getRandomSpecialInterval(config);
+        this.specialAnimationActive = false;
+        this.specialAnimationEndAt = 0;
+        this.group.rotation.order = 'YXZ';
 
         const spawn = findSpawnPosition(spawnIndex, ANIMAL_CONFIGS.length, this.bounds, this.radius, this.obstacles);
         this.pos.x = spawn.x;
@@ -340,6 +404,14 @@ class GLTFAnimal {
         }
     }
 
+    stopSound(reset = true) {
+        if (!this.sound) return;
+        this.sound.pause();
+        if (reset) {
+            this.sound.currentTime = 0;
+        }
+    }
+
     scheduleNextAmbientSound(nowSeconds) {
         const delay = AMBIENT_SOUND_MIN_INTERVAL + Math.random() * (AMBIENT_SOUND_MAX_INTERVAL - AMBIENT_SOUND_MIN_INTERVAL);
         this.nextAmbientSoundAt = nowSeconds + delay;
@@ -358,7 +430,7 @@ class GLTFAnimal {
         this.scheduleNextAmbientSound(nowSeconds);
     }
 
-    playAnimation(name) {
+    playAnimation(name, options = {}) {
         const actionKeys = Object.keys(this.actions);
         if (actionKeys.length === 0) return;
 
@@ -366,20 +438,31 @@ class GLTFAnimal {
         if (!action) {
             const walkKeys = actionKeys.filter(k => k.includes('walk') || k.includes('trot') || k.includes('prowl') || k.includes('stalk'));
             const runKeys = actionKeys.filter(k => k.includes('run') || k.includes('gallop') || k.includes('sprint') || k.includes('leap'));
-            const idleKeys = actionKeys.filter(k => k.includes('idle') || k.includes('stand') || k.includes('breathing') || k.includes('eating') || k.includes('rest') || k.includes('sit'));
+            const idleKeys = actionKeys.filter(k => (k.includes('run') || k.includes('walk') || k.includes('idle') || k.includes('stand') || k.includes('breathing') || k.includes('eating') || k.includes('eat') || k.includes('rest') || k.includes('sit')) && !k.includes('lie') && !k.includes('prone') && !k.includes('attack') && !k.includes('death'));
 
-            if (name === 'walk' && walkKeys.length > 0) action = this.actions[walkKeys[0]];
-            else if (name === 'run' && runKeys.length > 0) action = this.actions[runKeys[0]];
-            else if (name === 'run' && walkKeys.length > 0) action = this.actions[walkKeys[0]];
-            else if (name === 'idle' && idleKeys.length > 0) action = this.actions[idleKeys[0]];
-            else action = this.actions[actionKeys[0]];
+            if (name === 'idle' && this.config.idleAnimation) {
+                const forcedIdleName = this.config.idleAnimation.toLowerCase();
+                const forcedIdle = actionKeys.find(k => k === forcedIdleName || k.includes(forcedIdleName));
+                if (forcedIdle) {
+                    action = this.actions[forcedIdle];
+                }
+            }
+
+            if (!action && name === 'walk' && walkKeys.length > 0) action = this.actions[walkKeys[0]];
+            else if (!action && name === 'run' && runKeys.length > 0) action = this.actions[runKeys[0]];
+            else if (!action && name === 'run' && walkKeys.length > 0) action = this.actions[walkKeys[0]];
+            else if (!action && name === 'idle' && idleKeys.length > 0) action = this.actions[idleKeys[0]];
+            else action = null;
         }
 
         if (action && action !== this.currentAction) {
             if (this.currentAction) this.currentAction.fadeOut(this.transitionTime);
             action.enabled = true;
-            action.setEffectiveTimeScale(1);
+            const timeScale = Number.isFinite(options.timeScale) ? options.timeScale : 1;
+            action.setEffectiveTimeScale(timeScale);
             action.setEffectiveWeight(1);
+            action.setLoop(options.loopOnce ? THREE.LoopOnce : THREE.LoopRepeat, options.loopOnce ? 1 : Infinity);
+            action.clampWhenFinished = !!options.loopOnce;
             action.reset();
             action.fadeIn(this.transitionTime);
             action.play();
@@ -390,16 +473,59 @@ class GLTFAnimal {
     update(t, dt) {
         if (this.mixer) this.mixer.update(dt);
 
-        this.timer -= dt;
-        if (this.timer < 0) this.switchBehavior();
+        if (this.movementStyle !== 'static') {
+            this.timer -= dt;
+            if (this.timer < 0) this.switchBehavior();
+        } else {
+            this.state = 'idle';
+            this.targetSpeed = 0;
+            this.currentSpeed = 0;
 
-        const angleDiff = ((this.targetAngle - this.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-        this.angle += angleDiff * this.turnSpeed;
+            const specialName = this.config.specialAnimation;
+            const specialInterval = getRandomSpecialInterval(this.config);
+            if (specialName && specialInterval > 0) {
+                if (this.specialAnimationActive && t >= this.specialAnimationEndAt) {
+                    this.specialAnimationActive = false;
+                    this.playAnimation('idle');
+                }
 
-        const speedLerp = 1 - Math.exp(-3 * dt);
-        this.currentSpeed += (this.targetSpeed - this.currentSpeed) * speedLerp;
+                if (!this.specialAnimationActive && t >= this.nextSpecialAnimationAt) {
+                    const specialChance = THREE.MathUtils.clamp(this.config.specialAnimationChance ?? 1, 0, 1);
+                    if (Math.random() > specialChance) {
+                        this.nextSpecialAnimationAt = t + specialInterval;
+                        this.playAnimation('idle');
+                        return;
+                    }
 
-        if (this.state === 'walk' || this.state === 'run') {
+                    const wantedName = specialName.toLowerCase();
+                    const specialActionKey = Object.keys(this.actions).find((k) => k === wantedName || k.includes(wantedName));
+                    const specialAction = specialActionKey ? this.actions[specialActionKey] : null;
+                    const specialTimeScale = this.config.specialAnimationTimeScale ?? 0.8;
+
+                    if (specialAction) {
+                        this.playAnimation(specialActionKey, { loopOnce: true, timeScale: specialTimeScale });
+                        const duration = Math.max(0.01, specialAction.getClip().duration / specialTimeScale);
+                        this.specialAnimationEndAt = t + duration;
+                        this.specialAnimationActive = true;
+                        this.nextSpecialAnimationAt = this.specialAnimationEndAt + specialInterval;
+                    } else {
+                        this.nextSpecialAnimationAt = t + specialInterval;
+                    }
+                }
+            }
+        }
+
+        if (this.movementStyle !== 'static') {
+            const angleDiff = ((this.targetAngle - this.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+            this.angle += angleDiff * this.turnSpeed;
+        }
+
+        if (this.movementStyle !== 'static') {
+            const speedLerp = 1 - Math.exp(-3 * dt);
+            this.currentSpeed += (this.targetSpeed - this.currentSpeed) * speedLerp;
+        }
+
+        if (this.movementStyle !== 'static' && (this.state === 'walk' || this.state === 'run')) {
             let nextX = this.pos.x + Math.sin(this.angle) * this.currentSpeed;
             let nextZ = this.pos.z + Math.cos(this.angle) * this.currentSpeed;
             let hitObstacle = false;
@@ -416,10 +542,10 @@ class GLTFAnimal {
                 }
             }
 
-            // If they hit an object or hit the world boundary, turn around!
+            // If they hit an object or hit the world boundary, turn around.
             if (hitObstacle || Math.abs(nextX) > this.bounds || Math.abs(nextZ) > this.bounds) {
                 this.targetAngle += Math.PI * 0.8 + Math.random() * Math.PI * 0.4;
-                this.currentSpeed *= 0.8; // Slow down to turn
+                this.currentSpeed *= 0.8;
             } else {
                 this.pos.x = nextX;
                 this.pos.z = nextZ;
@@ -428,31 +554,47 @@ class GLTFAnimal {
 
         const h = getTerrainHeight(this.pos.x, this.pos.z);
         this.group.position.set(this.pos.x, h + this.baseYOffset, this.pos.z);
-        this.group.rotation.y = this.angle;
+        const terrainNormal = getTerrainNormalAt(this.pos.x, this.pos.z);
+        const targetPitch = THREE.MathUtils.clamp(Math.atan2(-terrainNormal.z, terrainNormal.y), -0.28, 0.28);
+        const targetRoll = THREE.MathUtils.clamp(Math.atan2(terrainNormal.x, terrainNormal.y), -0.28, 0.28);
+        const slopeLerp = Math.min(1, dt * 6);
+        this.slopePitch += (targetPitch - this.slopePitch) * slopeLerp;
+        this.slopeRoll += (targetRoll - this.slopeRoll) * slopeLerp;
+        this.group.rotation.set(this.slopePitch, this.angle, this.slopeRoll, 'YXZ');
 
         if (this.movementStyle === 'bigCat') {
             const motionT = t + this.motionOffset;
             if (this.state === 'idle') {
                 // Slow breathing and tiny body sway for natural resting posture.
                 this.group.position.y += Math.sin(motionT * 1.6) * 0.045;
-                this.group.rotation.z = Math.sin(motionT * 0.7) * 0.018;
+                this.group.rotation.z += Math.sin(motionT * 0.7) * 0.018;
             } else if (this.state === 'walk') {
                 // Subtle shoulder bob while prowling.
                 this.group.position.y += Math.sin(motionT * 5.2) * 0.06;
-                this.group.rotation.z = Math.sin(motionT * 2.6) * 0.012;
+                this.group.rotation.z += Math.sin(motionT * 2.6) * 0.012;
             } else {
                 this.group.position.y += Math.sin(motionT * 7.6) * 0.085;
-                this.group.rotation.z = 0;
+                this.group.rotation.z += 0;
             }
+        } else if (this.movementStyle === 'static') {
+            const motionT = t + this.motionOffset;
+            this.group.position.y += Math.sin(motionT * 1.15) * 0.02;
+            this.group.rotation.y += Math.sin(motionT * 0.55) * 0.012;
         } else {
-            this.group.rotation.z = 0;
+            this.group.rotation.z = this.slopeRoll;
         }
 
-        // Ground using a stable offset captured at spawn so malformed animated bounds don't sink models.
+        // Ground by matching the animated bounding-box floor to terrain height + clearance.
         const groundClearance = this.config.groundClearance ?? 0.01;
-        const desiredGroundY = h + groundClearance + (this.groundOffsetFromMin ?? this.baseYOffset);
-        const groundingDelta = THREE.MathUtils.clamp(desiredGroundY - this.group.position.y, -0.045, 0.09);
+        this.dynamicBox.setFromObject(this.group);
+        const desiredBoxMinY = h + groundClearance;
+        const rawGroundingDelta = desiredBoxMinY - this.dynamicBox.min.y;
+        const groundingDelta = rawGroundingDelta > 0
+            ? rawGroundingDelta
+            : THREE.MathUtils.clamp(rawGroundingDelta, -0.02, 0);
         this.group.position.y += groundingDelta;
+        this.dynamicBox.setFromObject(this.group);
+        const desiredGroundY = this.dynamicBox.min.y;
 
         if (this.shadow) {
             const airHeight = Math.max(0, this.group.position.y - desiredGroundY);
@@ -462,6 +604,14 @@ class GLTFAnimal {
     }
 
     switchBehavior() {
+        if (this.movementStyle === 'static') {
+            this.state = 'idle';
+            this.timer = 999;
+            this.targetSpeed = 0;
+            this.playAnimation('idle');
+            return;
+        }
+
         if (this.movementStyle === 'bigCat') {
             const rand = Math.random();
             if (rand < 0.56) {
@@ -508,8 +658,8 @@ class GLTFAnimal {
     }
 
     dispose() {
+        this.stopSound(true);
         if (this.sound) {
-            this.sound.pause();
             this.sound.src = '';
         }
         if (this.mixer) {
@@ -538,18 +688,26 @@ const modelCache = new Map();
 
 // Pass obstacles parameter here
 export async function loadGLTFAnimals(scene, obstacles) {
-    const loader = new GLTFLoader();
     const animals = [];
 
     const loadModel = (file) => {
         if (modelCache.has(file)) return Promise.resolve(modelCache.get(file));
         return new Promise((resolve) => {
-            loader.load(
-                `/models/animals/${file}`,
-                (gltf) => { modelCache.set(file, gltf); resolve(gltf); },
-                undefined,
-                (error) => { console.warn(`Failed to load ${file}:`, error); resolve(null); }
-            );
+            const load = async () => {
+                const loader = new GLTFLoader();
+                const modelPath = `/models/animals/${file}`;
+                const modelUrl = await resolveAssetUrl(modelPath);
+                const resourcePath = modelPath.slice(0, modelPath.lastIndexOf('/') + 1);
+                loader.setResourcePath(resourcePath);
+                loader.load(
+                    modelUrl,
+                    (gltf) => { modelCache.set(file, gltf); resolve(gltf); },
+                    undefined,
+                    (error) => { console.warn(`Failed to load ${file}:`, error); resolve(null); }
+                );
+            };
+
+            load().catch(() => resolve(null));
         });
     };
 

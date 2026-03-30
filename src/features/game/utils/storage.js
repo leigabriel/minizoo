@@ -139,7 +139,7 @@ export function getTasks() {
     const animalNames = [
         'Red Fox', 'White-tailed Deer', 'Gray Wolf', 'Domestic Horse',
         'Donkey', 'Domestic Cow', 'Alpaca', 'Siberian Husky',
-        'Shiba Inu', 'Red Deer Stag', 'Bull'
+        'Shiba Inu', 'Red Deer Stag', 'Bull', 'Bengal Tiger'
     ];
     
     return animalNames.map(name => ({

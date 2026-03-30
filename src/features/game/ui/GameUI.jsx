@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { resolveAssetUrl } from '../utils/localAssets.js';
 
-const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || 'https://bulusanzoo.vercel.app';
+const BULUSAN_ZOO_URL = import.meta.env.VITE_BULUSAN_ZOO_URL || '/';
 const HUD_EDGE = 14;
 const SETTINGS_KEY = 'minizoo_settings';
 const SETTINGS_CHANGE_EVENT = 'minizoo-settings-changed';
@@ -19,6 +20,13 @@ function getUIButtonAudioTemplate(kind = 'tap') {
     if (!uiButtonAudioTemplates[audioSrc]) {
         const template = new Audio(audioSrc);
         template.preload = 'auto';
+        resolveAssetUrl(audioSrc)
+            .then((assetUrl) => {
+                if (assetUrl) {
+                    template.src = assetUrl;
+                }
+            })
+            .catch(() => { });
         uiButtonAudioTemplates[audioSrc] = template;
     }
     return uiButtonAudioTemplates[audioSrc];
@@ -1951,7 +1959,8 @@ function Modal({ isOpen, onClose, title, children, showClose = true, placement =
                     </button>
                 )}
                 {title && (
-                    <h3 style={{ fontSize: 20, margin: '0 0 14px',
+                    <h3 style={{
+                        fontSize: 20, margin: '0 0 14px',
                         background: 'linear-gradient(135deg, #ff9f43, #ff6b9d)',
                         WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                         paddingRight: showClose ? 36 : 0,

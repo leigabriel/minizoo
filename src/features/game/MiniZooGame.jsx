@@ -41,6 +41,12 @@ import {
     getTotalTasks,
     resetAllFeedingTasks
 } from './utils/storage.js';
+import {
+    ESSENTIAL_ASSET_PATHS,
+    releaseAssetObjectUrls,
+    resolveAssetUrl,
+    warmupAssetStore
+} from './utils/localAssets.js';
 
 const PLAYER_HEIGHT = 0.2;
 const PLAYER_CHARACTER_TARGET_HEIGHT = 1.6;
@@ -222,11 +228,12 @@ function addStatueLights(scene) {
     scene.add(fill);
 }
 
-function loadCenterStatue(scene, isMobile) {
+async function loadCenterStatue(scene, isMobile) {
     const loader = new GLTFLoader();
+    const statueUrl = await resolveAssetUrl('/bulusanstatue.glb');
     return new Promise((resolve) => {
         loader.load(
-            '/bulusanstatue.glb',
+            statueUrl,
             (gltf) => {
                 const statue = gltf.scene;
                 const terrainY = getTerrainHeight(STATUE_CENTER.x, STATUE_CENTER.z);
@@ -284,11 +291,12 @@ function loadCenterStatue(scene, isMobile) {
     });
 }
 
-function loadStaffNpc(scene, isMobile) {
+async function loadStaffNpc(scene, isMobile) {
     const loader = new GLTFLoader();
+    const staffUrl = await resolveAssetUrl(`/character/${STAFF_NPC_CONFIG.file}`);
     return new Promise((resolve) => {
         loader.load(
-            `/character/${STAFF_NPC_CONFIG.file}`,
+            staffUrl,
             (gltf) => {
                 const model = gltf.scene;
                 model.traverse((child) => {
@@ -390,6 +398,7 @@ function MiniZooGame() {
     const isNearStatueRef = useRef(false);
     const hasShownStatueEntryRef = useRef(false);
     const soundEnabledRef = useRef(isSoundEnabled());
+    const gameStartedRef = useRef(false);
     const cameraModeRef = useRef('first');
     const showNpcDialogueRef = useRef(false);
 
@@ -470,6 +479,11 @@ function MiniZooGame() {
         };
     }, []);
 
+    useEffect(() => {
+        // Seed IndexedDB with essential large assets on first visit.
+        warmupAssetStore(ESSENTIAL_ASSET_PATHS).catch(() => { });
+    }, []);
+
     const checkNearbyAnimals = useCallback((playerPosition, animals) => {
         if (!playerPosition || !animals.length) return null;
         const pos = playerPosition;
@@ -493,11 +507,19 @@ function MiniZooGame() {
 
     const getAmbience = useCallback(() => {
         if (!ambienceRef.current) {
-            const audio = new Audio('/ambience.mp3');
+            const fallbackPath = '/ambience.mp3';
+            const audio = new Audio(fallbackPath);
             audio.loop = true;
             audio.preload = 'auto';
             audio.volume = 0.42;
             audio.setAttribute('playsinline', 'true');
+            resolveAssetUrl(fallbackPath)
+                .then((assetUrl) => {
+                    if (assetUrl) {
+                        audio.src = assetUrl;
+                    }
+                })
+                .catch(() => { });
             ambienceRef.current = audio;
         }
         return ambienceRef.current;
@@ -522,6 +544,14 @@ function MiniZooGame() {
             audio.currentTime = 0;
         }
     }, []);
+
+    const stopGameplaySounds = useCallback((keepMusicPosition = false) => {
+        stopAmbience(keepMusicPosition);
+        const state = gameStateRef.current;
+        state.animals.forEach((animal) => {
+            animal.stopSound?.(true);
+        });
+    }, [stopAmbience]);
 
     const clearStatueMessageTimers = useCallback(() => {
         if (statueMessageTimerRef.current) {
@@ -631,8 +661,9 @@ function MiniZooGame() {
             disposePlayerCharacter();
 
             const loader = new GLTFLoader();
+            const characterUrl = await resolveAssetUrl(`/character/${characterOption.file}`);
             const gltf = await new Promise((resolve, reject) => {
-                loader.load(`/character/${characterOption.file}`, resolve, undefined, reject);
+                loader.load(characterUrl, resolve, undefined, reject);
             });
 
             const model = gltf.scene;
@@ -946,11 +977,17 @@ function MiniZooGame() {
                 ambientSoundTimer += dt;
                 if (ambientSoundTimer >= 0.35) {
                     ambientSoundTimer = 0;
-                    const nowSeconds = now * 0.001;
-                    const soundEnabled = soundEnabledRef.current;
-                    state.animals.forEach((animal) => {
-                        animal.maybePlayAmbientSound?.(nowSeconds, playerPosition, soundEnabled);
-                    });
+                    if (gameStartedRef.current) {
+                        const nowSeconds = now * 0.001;
+                        const soundEnabled = soundEnabledRef.current;
+                        state.animals.forEach((animal) => {
+                            animal.maybePlayAmbientSound?.(nowSeconds, playerPosition, soundEnabled);
+                        });
+                    } else {
+                        state.animals.forEach((animal) => {
+                            animal.stopSound?.(true);
+                        });
+                    }
                 }
 
                 statueCheckTimer += dt;
@@ -1048,6 +1085,8 @@ function MiniZooGame() {
     const handleStartGame = useCallback(() => {
         const state = gameStateRef.current;
         hasShownStatueEntryRef.current = false;
+        gameStartedRef.current = true;
+        soundEnabledRef.current = isSoundEnabled();
         setShowMenu(false);
         setGameStarted(true);
         setTasks(getTasks());
@@ -1061,6 +1100,9 @@ function MiniZooGame() {
         state.controlsEnabled = false;
         setShowWelcome(false);
         playAmbience();
+        setTimeout(() => {
+            if (gameStartedRef.current) playAmbience();
+        }, 220);
     }, [playAmbience]);
     const handleMenuClick = useCallback(() => setSettingsOpen(true), []);
     const handleTasksClick = useCallback(() => setTasksOpen(true), []);
@@ -1079,10 +1121,12 @@ function MiniZooGame() {
     const handleCancelResetTasks = useCallback(() => setShowResetTasksModal(false), []);
     const handleQuitRequest = useCallback(() => { setSettingsOpen(false); setShowQuitModal(true); }, []);
     const handleConfirmQuit = useCallback(() => {
+        gameStartedRef.current = false;
+        soundEnabledRef.current = false;
         hasShownStatueEntryRef.current = false;
         setShowQuitModal(false);
         setShowResetTasksModal(false);
-        stopAmbience(true);
+        stopGameplaySounds(false);
         setSettingsOpen(false);
         setTasksOpen(false);
         setSelectedAnimal(null);
@@ -1100,7 +1144,7 @@ function MiniZooGame() {
         setNpcDialogueNodeId('root');
         setGameStarted(false);
         setShowMenu(true);
-    }, [stopAmbience]);
+    }, [stopGameplaySounds]);
     const handleCancelQuit = useCallback(() => setShowQuitModal(false), []);
 
     const handleViewDetails = useCallback(() => {
@@ -1250,6 +1294,10 @@ function MiniZooGame() {
     }, [nearbyAnimal, nearbyStaff, selectedAnimal, showNpcDialogue, gameStarted, settingsOpen, tasksOpen, animalModalPlacement, characterReady, showCharacterSelect, cycleCameraMode, openNpcDialogue, closeNpcDialogue]);
 
     useEffect(() => {
+        gameStartedRef.current = gameStarted;
+    }, [gameStarted]);
+
+    useEffect(() => {
         const syncSoundEnabled = () => {
             soundEnabledRef.current = isSoundEnabled();
         };
@@ -1286,14 +1334,17 @@ function MiniZooGame() {
                 clearTimeout(welcomeTimerRef.current);
                 welcomeTimerRef.current = null;
             }
-            stopAmbience(false);
+            gameStartedRef.current = false;
+            soundEnabledRef.current = false;
+            stopGameplaySounds(false);
             ambienceRef.current = null;
             setNearbyStaff(false);
             setShowNpcDialogue(false);
             setNpcDialogueNodeId('root');
             state.cleanup?.();
+            releaseAssetObjectUrls();
         };
-    }, [clearStatueMessageTimers, initGame, stopAmbience]);
+    }, [clearStatueMessageTimers, initGame, stopGameplaySounds]);
 
     useEffect(() => {
         showNpcDialogueRef.current = showNpcDialogue;

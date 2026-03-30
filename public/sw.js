@@ -1,86 +1,124 @@
-const APP_CACHE = 'minizoo-app-v1';
-const RUNTIME_CACHE = 'minizoo-runtime-v1';
+const CACHE_VERSION = '2026-03-30-v2';
+const APP_SHELL_CACHE = `minizoo-app-shell-${CACHE_VERSION}`;
+const STATIC_CACHE = `minizoo-static-${CACHE_VERSION}`;
+const MEDIA_CACHE = `minizoo-media-${CACHE_VERSION}`;
+const DYNAMIC_CACHE = `minizoo-dynamic-${CACHE_VERSION}`;
 
-const CORE_ASSETS = [
+const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
+  '/manifest.webmanifest',
   '/favicon.svg',
-  '/bulusanstatue.glb',
-  '/ambience.mp3',
+  '/icons/icon-180.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
 ];
 
+const STATIC_EXT_RE = /\.(?:js|css|png|jpg|jpeg|webp|svg|gif|ico|woff2?|ttf|otf)$/i;
+const MEDIA_EXT_RE = /\.(?:mp3|wav|ogg|glb|gltf|obj|mtl|bin)$/i;
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(APP_CACHE)
-      .then((cache) => cache.addAll(CORE_ASSETS))
-      .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const appShell = await caches.open(APP_SHELL_CACHE);
+    await appShell.addAll(APP_SHELL_ASSETS);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    const expectedCaches = new Set([APP_SHELL_CACHE, STATIC_CACHE, MEDIA_CACHE, DYNAMIC_CACHE]);
     const keys = await caches.keys();
-    await Promise.all(
-      keys
-        .filter((k) => k !== APP_CACHE && k !== RUNTIME_CACHE)
-        .map((k) => caches.delete(k))
-    );
+    await Promise.all(keys.map((key) => {
+      if (!expectedCaches.has(key)) {
+        return caches.delete(key);
+      }
+      return Promise.resolve();
+    }));
     await self.clients.claim();
   })());
 });
 
-function shouldCacheRequest(requestUrl) {
-  const path = requestUrl.pathname;
-  if (path.startsWith('/models/')) return true;
-  if (path.startsWith('/assets/')) return true;
-  return /\.(?:js|css|png|jpg|jpeg|webp|svg|gif|woff2?|glb|gltf|obj|mtl|mp3)$/i.test(path);
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+async function cacheFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const network = await fetch(request);
+  if (network.ok) {
+    cache.put(request, network.clone());
+  }
+  return network;
+}
+
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+
+  const networkPromise = fetch(request)
+    .then((network) => {
+      if (network.ok) {
+        cache.put(request, network.clone());
+      }
+      return network;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    networkPromise.catch(() => null);
+    return cached;
+  }
+
+  const network = await networkPromise;
+  return network || Response.error();
+}
+
+async function networkFirst(request, cacheName, fallbackPath) {
+  const cache = await caches.open(cacheName);
+  try {
+    const network = await fetch(request);
+    if (network.ok) {
+      cache.put(request, network.clone());
+    }
+    return network;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    if (fallbackPath) {
+      const fallback = await caches.match(fallbackPath);
+      if (fallback) return fallback;
+    }
+    return Response.error();
+  }
 }
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith((async () => {
-      try {
-        const network = await fetch(request);
-        const cache = await caches.open(APP_CACHE);
-        cache.put('/index.html', network.clone());
-        return network;
-      } catch {
-        const cached = await caches.match('/index.html');
-        return cached || Response.error();
-      }
-    })());
+    event.respondWith(networkFirst(request, DYNAMIC_CACHE, '/index.html'));
     return;
   }
 
-  if (!shouldCacheRequest(url)) return;
+  if (STATIC_EXT_RE.test(url.pathname)) {
+    event.respondWith(cacheFirst(request, STATIC_CACHE));
+    return;
+  }
 
-  event.respondWith((async () => {
-    const cache = await caches.open(RUNTIME_CACHE);
-    const cached = await cache.match(request);
+  if (MEDIA_EXT_RE.test(url.pathname) || url.pathname.startsWith('/models/') || url.pathname.startsWith('/audio/')) {
+    event.respondWith(staleWhileRevalidate(request, MEDIA_CACHE));
+    return;
+  }
 
-    const networkPromise = fetch(request)
-      .then((response) => {
-        if (response && response.ok) {
-          cache.put(request, response.clone());
-        }
-        return response;
-      })
-      .catch(() => null);
-
-    if (cached) {
-      networkPromise.catch(() => null);
-      return cached;
-    }
-
-    const network = await networkPromise;
-    return network || Response.error();
-  })());
+  event.respondWith(networkFirst(request, DYNAMIC_CACHE));
 });
